@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>나만의 안전신문고</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 헤더 -->
+    <header>
+      <div class="header-left">
+        <img src="icons/icon48.png" class="logo" alt="">
+        <div>
+          <h1>안전신문고</h1>
+          <div class="conn-status">
+            <span id="connDot" class="dot dot-unknown"></span>
+            <span id="connText">연결 확인 중...</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="btnRefresh" class="icon-btn" title="새로고침">&#8635;</button>
+        <button id="btnOptions" class="icon-btn" title="설정">&#9881;</button>
+      </div>
+    </header>
+
+    <!-- 미설정 안내 -->
+    <div id="noConfig" class="notice hidden">
+      <p>서버 주소와 API 키를 설정해 주세요.</p>
+      <button id="btnGoOptions" class="btn btn-primary">설정 열기</button>
+    </div>
+
+    <!-- 메인 콘텐츠 -->
+    <main id="mainContent" class="hidden">
+      <!-- 통계 카드 -->
+      <section class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">전체</div>
+          <div id="statTotal" class="stat-value">-</div>
+        </div>
+        <div class="stat-card accent-blue">
+          <div class="stat-label">처리중</div>
+          <div id="statProcessing" class="stat-value">-</div>
+        </div>
+        <div class="stat-card accent-green">
+          <div class="stat-label">수용</div>
+          <div id="statAccept" class="stat-value">-</div>
+        </div>
+        <div class="stat-card accent-red">
+          <div class="stat-label">불수용</div>
+          <div id="statReject" class="stat-value">-</div>
+        </div>
+      </section>
+
+      <!-- 교통위반 요약 -->
+      <section class="traffic-summary">
+        <div class="section-title">교통위반 요약</div>
+        <div class="traffic-grid">
+          <div class="traffic-item">
+            <span class="traffic-label">과태료</span>
+            <span id="tFine" class="traffic-value">-</span>
+          </div>
+          <div class="traffic-item">
+            <span class="traffic-label">범칙금</span>
+            <span id="tPenalty" class="traffic-value">-</span>
+          </div>
+          <div class="traffic-item">
+            <span class="traffic-label">불수용</span>
+            <span id="tReject" class="traffic-value">-</span>
+          </div>
+          <div class="traffic-item">
+            <span class="traffic-label">미확인</span>
+            <span id="tUnconfirmed" class="traffic-value">-</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 최근 3일 답변 -->
+      <section class="recent-section">
+        <div class="section-title">최근 3일 답변 <span id="recentCount" class="badge">0</span></div>
+        <div id="recentList" class="recent-list">
+          <div class="empty-msg">없음</div>
+        </div>
+      </section>
+
+      <!-- 크롤링 제어 -->
+      <section class="crawl-section">
+        <div class="crawl-row">
+          <div>
+            <div class="section-title">크롤링</div>
+            <div class="crawl-status-row">
+              <span id="crawlDot" class="dot dot-unknown"></span>
+              <span id="crawlText">확인 중...</span>
+            </div>
+          </div>
+          <div class="crawl-buttons">
+            <button id="btnStartCrawl" class="btn btn-primary btn-sm hidden">시작</button>
+            <button id="btnStopCrawl" class="btn btn-danger btn-sm hidden">중지</button>
+          </div>
+        </div>
+        <div id="lastCrawl" class="last-crawl-time"></div>
+      </section>
+    </main>
+
+    <!-- 푸터 -->
+    <footer id="mainFooter" class="hidden">
+      <button id="btnOpenDash" class="btn btn-outline btn-full">대시보드 열기</button>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>안전신문고 확장 — 설정</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      background: #f8f9fa;
+      color: #1a1a2e;
+      padding: 0;
+    }
+
+    .page {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .logo-row img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+
+    .logo-row h1 {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .logo-row p {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group:last-child { margin-bottom: 0; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #334155;
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="url"] {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      font-size: 13px;
+      color: #1e293b;
+      background: #f8fafc;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      background: #fff;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 9px 20px;
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-outline {
+      background: transparent;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+    }
+
+    #saveMsg {
+      font-size: 12px;
+      color: #22c55e;
+      font-weight: 600;
+    }
+
+    #errMsg {
+      font-size: 12px;
+      color: #ef4444;
+      font-weight: 600;
+    }
+
+    .test-row {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .test-result {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .test-ok { color: #22c55e; }
+    .test-fail { color: #ef4444; }
+
+    .divider {
+      height: 1px;
+      background: #f1f5f9;
+      margin: 12px 0;
+    }
+
+    .notify-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #cbd5e1;
+      border-radius: 22px;
+      transition: background 0.2s;
+    }
+
+    .toggle-slider:before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .toggle input:checked + .toggle-slider { background: #3b82f6; }
+    .toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+    .notify-label { font-size: 13px; color: #334155; }
+    .notify-sub { font-size: 11px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="logo-row">
+      <img src="icons/icon48.png" alt="">
+      <div>
+        <h1>나만의 안전신문고</h1>
+        <p>확장 설정</p>
+      </div>
+    </div>
+
+    <!-- 서버 연결 -->
+    <div class="card">
+      <div class="card-title">서버 연결</div>
+
+      <div class="form-group">
+        <label for="serverUrl">서버 주소</label>
+        <input type="url" id="serverUrl" placeholder="http://192.168.0.10:6819">
+        <div class="hint">safetyreport 서버의 주소를 입력하세요 (예: http://서버IP:6819)</div>
+      </div>
+
+      <div class="form-group">
+        <label for="apiKey">API 키</label>
+        <input type="password" id="apiKey" placeholder="API 키 입력">
+        <div class="hint">웹 관리 페이지의 <strong>기기 연동</strong> 메뉴에서 발급한 키를 입력하세요.</div>
+      </div>
+
+      <div class="test-row">
+        <button id="btnTest" class="btn btn-outline">연결 테스트</button>
+        <span id="testResult" class="test-result"></span>
+      </div>
+    </div>
+
+    <!-- 알림 설정 -->
+    <div class="card">
+      <div class="card-title">알림 설정</div>
+
+      <div class="notify-row">
+        <div>
+          <div class="notify-label">크롤링 완료 알림</div>
+          <div class="notify-sub">크롤링이 끝나면 브라우저 알림을 표시합니다.</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="notifyCrawlDone" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="notify-row">
+        <div>
+          <div class="notify-label">확인 주기</div>
+          <div class="notify-sub">백그라운드에서 상태를 확인하는 간격 (분)</div>
+        </div>
+        <input type="text" id="pollInterval" style="width:60px;text-align:center;" value="5">
+      </div>
+    </div>
+
+    <!-- 저장 -->
+    <div class="actions">
+      <button id="btnSave" class="btn btn-primary">저장</button>
+      <span id="saveMsg"></span>
+      <span id="errMsg"></span>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
