@@ -56,14 +56,15 @@ function stateClass(status) {
 
 function renderStats(data) {
   el('statTotal').textContent = data.total ?? '-';
-  el('statProcessing').textContent = data.processing_count ?? '-';
-  el('statAccept').textContent = data.accept_count ?? '-';
-  el('statReject').textContent = data.reject_count ?? '-';
+  el('statProcessing').textContent = data.processingCount ?? '-';
+  el('statAccept').textContent = data.acceptCount ?? '-';
+  el('statPartial').textContent = data.partialCount ?? '-';
+  el('statReject').textContent = data.rejectCount ?? '-';
 
-  el('tFine').textContent = data.t_fine_count ?? '-';
-  el('tPenalty').textContent = data.t_penalty_count ?? '-';
-  el('tReject').textContent = data.t_reject_count ?? '-';
-  el('tUnconfirmed').textContent = data.t_unconfirmed_count ?? '-';
+  el('tFine').textContent = data.tFineCount ?? '-';
+  el('tPenalty').textContent = data.tPenaltyCount ?? '-';
+  el('tReject').textContent = data.tRejectCount ?? '-';
+  el('tUnconfirmed').textContent = data.tUnconfirmedCount ?? '-';
 
   const recent = data.recent_answers ?? [];
   el('recentCount').textContent = recent.length;

@@ -115,9 +115,33 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// 팝업/옵션에서 알람 재설정 요청
-chrome.runtime.onMessage.addListener((msg) => {
+// 메시지 핸들러 (팝업/옵션/콘텐츠 스크립트)
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'RESET_ALARM') {
     resetAlarm();
+    return false;
   }
+
+  // 콘텐츠 스크립트 대신 fetch (HTTPS 페이지 → HTTP 서버 Mixed Content 우회)
+  if (msg.type === 'FETCH_VEHICLE') {
+    getConfig().then(({ serverUrl, apiKey }) => {
+      if (!serverUrl || !apiKey) {
+        sendResponse({ error: 'NO_CONFIG' });
+        return;
+      }
+      const base = serverUrl.replace(/\/$/, '');
+      fetch(`${base}/api/v1/vehicle/${encodeURIComponent(msg.vehicleNumber)}`, {
+        headers: { 'X-API-Key': apiKey },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((data) => sendResponse({ data }))
+        .catch((err) => sendResponse({ error: err.message }));
+    });
+    return true; // 비동기 응답
+  }
+
+  return false;
 });

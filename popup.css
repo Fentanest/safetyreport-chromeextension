@@ -131,8 +131,8 @@ main {
 /* 통계 카드 */
 .stats-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
   margin-bottom: 10px;
 }
 
@@ -160,6 +160,8 @@ main {
 .accent-blue .stat-value { color: #3b82f6; }
 .accent-green { border-top: 2px solid #22c55e; }
 .accent-green .stat-value { color: #22c55e; }
+.accent-yellow { border-top: 2px solid #eab308; }
+.accent-yellow .stat-value { color: #ca8a04; }
 .accent-red { border-top: 2px solid #ef4444; }
 .accent-red .stat-value { color: #ef4444; }
 

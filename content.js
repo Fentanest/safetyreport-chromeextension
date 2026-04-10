@@ -8,26 +8,25 @@ const DEBOUNCE_MS = 600;
 let debounceTimer = null;
 let lastQueried = '';
 
-// --- 설정 로드 ---
+// --- API 조회 (background service worker 경유 — Mixed Content 우회) ---
 
-function getConfig() {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get(['serverUrl', 'apiKey'], resolve);
+function fetchVehicleReports(vehicleNumber) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'FETCH_VEHICLE', vehicleNumber },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (response.error) {
+          reject(new Error(response.error));
+          return;
+        }
+        resolve(response.data);
+      }
+    );
   });
-}
-
-// --- API 조회 ---
-
-async function fetchVehicleReports(vehicleNumber) {
-  const { serverUrl, apiKey } = await getConfig();
-  if (!serverUrl || !apiKey) return null;
-
-  const base = serverUrl.replace(/\/$/, '');
-  const res = await fetch(`${base}/api/v1/vehicle/${encodeURIComponent(vehicleNumber)}`, {
-    headers: { 'X-API-Key': apiKey },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
 }
 
 // --- 패널 렌더링 ---
@@ -198,15 +197,14 @@ async function handleVehicleInput(inputEl) {
   showLoading(inputEl);
 
   try {
-    const { serverUrl, apiKey } = await getConfig();
-    if (!serverUrl || !apiKey) {
-      showNoConfig(inputEl);
-      return;
-    }
     const data = await fetchVehicleReports(value);
     showResults(inputEl, value, data);
   } catch (err) {
-    showError(inputEl, err.message);
+    if (err.message === 'NO_CONFIG') {
+      showNoConfig(inputEl);
+    } else {
+      showError(inputEl, err.message);
+    }
   }
 }
 
