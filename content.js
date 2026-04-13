@@ -210,10 +210,7 @@ async function handleVehicleInput(inputEl) {
 
 // --- 초기화 ---
 
-function init() {
-  const inputEl = document.getElementById('VHRNO');
-  if (!inputEl) return;
-
+function attachToInput(inputEl) {
   inputEl.addEventListener('input', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
@@ -248,7 +245,28 @@ function init() {
   }, { passive: true });
 }
 
-// DOM 준비 후 실행
+// #VHRNO를 즉시 찾거나, MutationObserver로 동적 생성 대기
+function init() {
+  const existing = document.getElementById('VHRNO');
+  if (existing) {
+    attachToInput(existing);
+    return;
+  }
+
+  // 동적으로 삽입되는 경우 대기 (최대 30초)
+  const observer = new MutationObserver(() => {
+    const inputEl = document.getElementById('VHRNO');
+    if (inputEl) {
+      observer.disconnect();
+      attachToInput(inputEl);
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  setTimeout(() => observer.disconnect(), 30000);
+}
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
