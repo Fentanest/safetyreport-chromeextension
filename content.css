@@ -51,6 +51,30 @@
   border-radius: 10px;
 }
 
+.sr-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sr-copy-btn {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.sr-copy-btn:hover {
+  background: rgba(255,255,255,0.22);
+}
+
 .sr-close {
   background: none;
   border: none;
@@ -137,6 +161,30 @@
   flex-shrink: 0;
 }
 
+.sr-rnum {
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: monospace;
+}
+
+.sr-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.sr-meta-item {
+  font-size: 11px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
 .sr-row-place {
   font-size: 11px;
   color: #64748b;
@@ -146,11 +194,20 @@
   text-overflow: ellipsis;
 }
 
+.sr-row-content {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
 .sr-row-result {
   font-size: 11px;
   color: #475569;
   margin-top: 2px;
   line-height: 1.4;
+  border-left: 2px solid #e2e8f0;
+  padding-left: 6px;
 }
 
 /* 상태 색상 */

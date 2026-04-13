@@ -105,18 +105,37 @@ function showResults(anchorEl, vehicleNumber, data) {
     ? '<div class="sr-empty">조회된 신고 내역이 없습니다.</div>'
     : records.map(buildRow).join('');
 
+  const copyBtn = records.length > 0
+    ? `<button class="sr-copy-btn" id="sr-copy-btn">신고번호 복사</button>`
+    : '';
+
   panel.innerHTML = `
     <div class="sr-panel-header">
       <span class="sr-panel-title">
         <strong>${vehicleNumber}</strong> 이전 신고 내역
         <span class="sr-count">${records.length}건</span>
       </span>
-      <button class="sr-close" id="sr-close-btn">&#x2715;</button>
+      <div class="sr-header-actions">
+        ${copyBtn}
+        <button class="sr-close" id="sr-close-btn">&#x2715;</button>
+      </div>
     </div>
     ${summaryHtml}
     <div class="sr-list">${rowsHtml}</div>
   `;
   bindClose(panel);
+
+  const copyBtnEl = panel.querySelector('#sr-copy-btn');
+  if (copyBtnEl) {
+    copyBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const numbers = records.map((r) => r.신고번호).filter(Boolean).join('\n');
+      navigator.clipboard.writeText(numbers).then(() => {
+        copyBtnEl.textContent = '복사됨!';
+        setTimeout(() => { copyBtnEl.textContent = '신고번호 복사'; }, 1500);
+      });
+    });
+  }
 }
 
 function buildSummary(records) {
@@ -146,21 +165,34 @@ function buildSummary(records) {
   `;
 }
 
+function esc(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function buildRow(r) {
   const { text, cls } = stateLabel(r.처리상태);
-  const fine = r.범칙금_과태료 ? `<span class="sr-fine-tag">${r.범칙금_과태료}</span>` : '';
+  const fine = r.범칙금_과태료 ? `<span class="sr-fine-tag">${esc(r.범칙금_과태료)}</span>` : '';
   const place = r.위반장소 || r.위반법규 || '';
+
+  const meta = [
+    r.차량번호 ? `<span class="sr-meta-item">🚗 ${esc(r.차량번호)}</span>` : '',
+    r.처리기관 ? `<span class="sr-meta-item">🏢 ${esc(r.처리기관)}</span>` : '',
+    r.담당자   ? `<span class="sr-meta-item">👤 ${esc(r.담당자)}</span>` : '',
+  ].filter(Boolean).join('');
 
   return `
     <div class="sr-row">
       <div class="sr-row-top">
-        <span class="sr-date">${r.신고일 || ''}</span>
-        <span class="sr-name" title="${r.신고명 || ''}">${r.신고명 || '(제목 없음)'}</span>
+        <span class="sr-rnum">${esc(r.신고번호 || '')}</span>
+        <span class="sr-date">${esc(r.신고일 || '')}</span>
+        <span class="sr-name" title="${esc(r.신고명 || '')}">${esc(r.신고명 || '(제목 없음)')}</span>
         <span class="sr-state ${cls}">${text}</span>
         ${fine}
       </div>
-      ${place ? `<div class="sr-row-place">${place}</div>` : ''}
-      ${r.처리내용 ? `<div class="sr-row-result">${r.처리내용.slice(0, 80)}${r.처리내용.length > 80 ? '…' : ''}</div>` : ''}
+      ${meta ? `<div class="sr-row-meta">${meta}</div>` : ''}
+      ${place ? `<div class="sr-row-place">📍 ${esc(place)}</div>` : ''}
+      ${r.신고내용 ? `<div class="sr-row-content">${esc(r.신고내용.slice(0, 60))}${r.신고내용.length > 60 ? '…' : ''}</div>` : ''}
+      ${r.처리내용 ? `<div class="sr-row-result">▶ ${esc(r.처리내용.slice(0, 80))}${r.처리내용.length > 80 ? '…' : ''}</div>` : ''}
     </div>
   `;
 }
@@ -178,7 +210,6 @@ function bindClose(panel) {
 function hidePanel() {
   const panel = document.getElementById(PANEL_ID);
   if (panel) panel.style.display = 'none';
-  lastQueried = '';
 }
 
 // --- 입력 처리 ---
@@ -211,7 +242,15 @@ async function handleVehicleInput(inputEl) {
 // --- 초기화 ---
 
 function attachToInput(inputEl) {
+  // 텍스트 변경 시
   inputEl.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    lastQueried = ''; // 강제 재조회 허용
+    debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
+  });
+
+  // 포커스 진입 시 — 이미 값이 있으면 즉시 패널 표시
+  inputEl.addEventListener('focus', () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
   });
