@@ -7,6 +7,7 @@ const DEBOUNCE_MS = 600;
 
 let debounceTimer = null;
 let lastQueried = '';
+let lastData = null; // 마지막 조회 결과 캐시
 
 // --- API 조회 (background service worker 경유 — Mixed Content 우회) ---
 
@@ -240,6 +241,7 @@ async function handleVehicleInput(inputEl) {
 
   try {
     const data = await fetchVehicleReports(value);
+    lastData = { value, data };
     showResults(inputEl, value, data);
   } catch (err) {
     if (err.message === 'NO_CONFIG') {
@@ -260,9 +262,20 @@ function attachToInput(inputEl) {
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
   });
 
-  // 포커스 진입 또는 클릭 시 — 이미 값이 있으면 즉시 패널 표시
+  // 포커스 진입 또는 클릭 시 — 캐시된 결과 즉시 표시, 없으면 재조회
   const showOnActivate = () => {
     clearTimeout(debounceTimer);
+    const value = inputEl.value.trim().replace(/\s/g, '');
+    if (value.length < 4) return;
+
+    // 같은 값이고 캐시가 있으면 API 호출 없이 즉시 재표시
+    if (lastData && lastData.value === value) {
+      showResults(inputEl, value, lastData.data);
+      return;
+    }
+
+    // 값이 바뀌었거나 캐시 없으면 재조회
+    lastQueried = '';
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
   };
   inputEl.addEventListener('focus', showOnActivate);
