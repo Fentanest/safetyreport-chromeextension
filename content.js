@@ -136,6 +136,14 @@ function showResults(anchorEl, vehicleNumber, data) {
       });
     });
   }
+
+  // 카드 클릭 → 안전신문고 신고 상세 새 탭
+  panel.querySelector('.sr-list')?.addEventListener('click', (e) => {
+    const row = e.target.closest('.sr-row-link');
+    if (!row) return;
+    e.stopPropagation();
+    window.open(row.dataset.url, '_blank');
+  });
 }
 
 function buildSummary(records) {
@@ -173,6 +181,9 @@ function buildRow(r) {
   const { text, cls } = stateLabel(r.처리상태);
   const fine = r.범칙금_과태료 ? `<span class="sr-fine-tag">${esc(r.범칙금_과태료)}</span>` : '';
   const place = r.위반장소 || r.위반법규 || '';
+  const detailUrl = r.ID
+    ? `https://www.safetyreport.go.kr/#mypage/mysafereport/${esc(String(r.ID))}`
+    : '';
 
   const meta = [
     r.차량번호 ? `<span class="sr-meta-item">🚗 ${esc(r.차량번호)}</span>` : '',
@@ -181,7 +192,7 @@ function buildRow(r) {
   ].filter(Boolean).join('');
 
   return `
-    <div class="sr-row">
+    <div class="sr-row${detailUrl ? ' sr-row-link' : ''}" ${detailUrl ? `data-url="${detailUrl}"` : ''}>
       <div class="sr-row-top">
         <span class="sr-rnum">${esc(r.신고번호 || '')}</span>
         <span class="sr-date">${esc(r.신고일 || '')}</span>
@@ -249,11 +260,13 @@ function attachToInput(inputEl) {
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
   });
 
-  // 포커스 진입 시 — 이미 값이 있으면 즉시 패널 표시
-  inputEl.addEventListener('focus', () => {
+  // 포커스 진입 또는 클릭 시 — 이미 값이 있으면 즉시 패널 표시
+  const showOnActivate = () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
-  });
+  };
+  inputEl.addEventListener('focus', showOnActivate);
+  inputEl.addEventListener('click', showOnActivate);
 
   // 차량번호 없음 체크 시 패널 숨기기
   const noVhrChk = document.getElementById('chkNoVhrNo');

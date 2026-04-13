@@ -127,6 +127,9 @@
 
 .sr-row:last-child { border-bottom: none; }
 .sr-row:hover { background: #f8fafc; }
+.sr-row-link { cursor: pointer; }
+.sr-row-link:hover { background: #eff6ff; }
+.sr-row-link:hover .sr-name { color: #2563eb; text-decoration: underline; }
 
 .sr-row-top {
   display: flex;
