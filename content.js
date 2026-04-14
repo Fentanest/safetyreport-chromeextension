@@ -177,7 +177,7 @@ function buildSummary(records) {
       <span class="sr-sum-item sr-state-reject">불수용 ${st.불수용}</span>
       <span class="sr-sum-divider"></span>
       <span class="sr-sum-item sr-fine-fine">과태료 ${ft.과태료}</span>
-      <span class="sr-sum-item sr-fine-penalty">범칙금 ${ft.범칙금}</span>
+      <span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${ft.범칙금}</span>
       <span class="sr-sum-item sr-state-reject">불수용 ${ft.불수용}</span>
       <span class="sr-sum-item sr-fine-unknown">미확인 ${ft.미확인}</span>
     </div>
