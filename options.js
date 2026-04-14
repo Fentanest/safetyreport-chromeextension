@@ -37,8 +37,19 @@ el('btnSave').addEventListener('click', () => {
   chrome.storage.sync.set(
     { serverUrl, apiKey, notifyCrawlDone, pollInterval },
     () => {
+      // 서버 origin에 대한 호스트 권한 요청 (optional_host_permissions)
+      try {
+        const origin = new URL(serverUrl).origin + '/*';
+        chrome.permissions.request({ origins: [origin] }, (granted) => {
+          if (!granted) {
+            errMsg.textContent = '서버 접근 권한이 허용되지 않았습니다. 저장은 완료됐습니다.';
+          }
+        });
+      } catch {
+        // URL 파싱 실패는 무시 (저장은 완료)
+      }
+
       saveMsg.textContent = '저장되었습니다.';
-      // 백그라운드에 알람 재설정 요청
       chrome.runtime.sendMessage({ type: 'RESET_ALARM', pollInterval });
       setTimeout(() => { saveMsg.textContent = ''; }, 2500);
     }

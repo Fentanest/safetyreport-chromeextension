@@ -8,7 +8,7 @@
     "notifications",
     "alarms"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "<all_urls>"
   ],
   "action": {
@@ -32,12 +32,8 @@
         "https://www.safetyreport.go.kr/*",
         "http://www.safetyreport.go.kr/*"
       ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "content.css"
-      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
       "run_at": "document_idle"
     }
   ],
