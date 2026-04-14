@@ -267,6 +267,24 @@ main {
   white-space: nowrap;
 }
 
+.recent-item-link {
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  transition: background 0.12s;
+}
+
+.recent-item-link:hover {
+  background: #eff6ff;
+}
+
+.recent-item-link:hover .recent-name {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
 .recent-fine {
   font-size: 10px;
   font-weight: 600;
