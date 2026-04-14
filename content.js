@@ -150,26 +150,36 @@ function showResults(anchorEl, vehicleNumber, data) {
 function buildSummary(records) {
   if (records.length === 0) return '';
 
-  const counts = { 수용: 0, 불수용: 0, 처리중: 0, 기타: 0 };
-  let fineCount = 0;
+  const st = { 처리중: 0, 수용: 0, 일부수용: 0, 불수용: 0 };
+  const ft = { 과태료: 0, 범칙금: 0, 불수용: 0, 미확인: 0 };
 
   records.forEach((r) => {
     const s = r.처리상태 || '';
-    if (s === '수용' || s === '일부수용') counts.수용++;
-    else if (s === '불수용' || s === '기타') counts.불수용++;
-    else if (['처리중', '진행', '진행중'].includes(s)) counts.처리중++;
-    else counts.기타++;
-
     const fp = r.범칙금_과태료 || '';
-    if (fp.includes('과태료') || fp.includes('범칙금')) fineCount++;
+    const isReject = ['불수용', '기타'].includes(s);
+
+    if (['처리중', '진행', '진행중'].includes(s)) st.처리중++;
+    else if (s === '수용') st.수용++;
+    else if (s === '일부수용') st.일부수용++;
+    else if (isReject) st.불수용++;
+
+    if (fp.includes('과태료')) ft.과태료++;
+    else if (fp.includes('범칙금') || fp.includes('경고')) ft.범칙금++;
+    else if (isReject) ft.불수용++;
+    else if (fp === '미확인') ft.미확인++;
   });
 
   return `
     <div class="sr-summary">
-      <span class="sr-sum-item sr-state-accept">수용 ${counts.수용}</span>
-      <span class="sr-sum-item sr-state-reject">불수용 ${counts.불수용}</span>
-      <span class="sr-sum-item sr-state-processing">처리중 ${counts.처리중}</span>
-      <span class="sr-sum-item sr-fine">과태료/범칙금 ${fineCount}</span>
+      <span class="sr-sum-item sr-state-processing">처리중 ${st.처리중}</span>
+      <span class="sr-sum-item sr-state-accept">수용 ${st.수용}</span>
+      <span class="sr-sum-item sr-state-partial">일부수용 ${st.일부수용}</span>
+      <span class="sr-sum-item sr-state-reject">불수용 ${st.불수용}</span>
+      <span class="sr-sum-divider"></span>
+      <span class="sr-sum-item sr-fine-fine">과태료 ${ft.과태료}</span>
+      <span class="sr-sum-item sr-fine-penalty">범칙금 ${ft.범칙금}</span>
+      <span class="sr-sum-item sr-state-reject">불수용 ${ft.불수용}</span>
+      <span class="sr-sum-item sr-fine-unknown">미확인 ${ft.미확인}</span>
     </div>
   `;
 }

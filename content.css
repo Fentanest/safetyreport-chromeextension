@@ -214,11 +214,26 @@
 }
 
 /* 상태 색상 */
-.sr-state-accept { background: #dcfce7; color: #16a34a; }
-.sr-state-reject { background: #fee2e2; color: #dc2626; }
-.sr-state-partial { background: #fef9c3; color: #ca8a04; }
+.sr-state-accept     { background: #dcfce7; color: #16a34a; }
+.sr-state-reject     { background: #fee2e2; color: #dc2626; }
+.sr-state-partial    { background: #fef9c3; color: #ca8a04; }
 .sr-state-processing { background: #dbeafe; color: #2563eb; }
-.sr-state-default { background: #f1f5f9; color: #64748b; }
+.sr-state-default    { background: #f1f5f9; color: #64748b; }
+
+/* 요약 구분선 */
+.sr-sum-divider {
+  width: 1px;
+  height: 14px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0 2px;
+}
+
+/* 요약 fine 색상 */
+.sr-fine-fine    { background: #fff7ed; color: #c2410c; }
+.sr-fine-penalty { background: #fef3c7; color: #b45309; }
+.sr-fine-unknown { background: #f1f5f9; color: #64748b; }
 
 /* 과태료/범칙금 태그 */
 .sr-fine-tag {
