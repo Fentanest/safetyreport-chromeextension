@@ -57,7 +57,7 @@ function buildPanel(anchorEl) {
 
   panel.style.top = `${rect.bottom + scrollTop + 4}px`;
   panel.style.left = `${rect.left + scrollLeft}px`;
-  panel.style.minWidth = `${Math.max(rect.width, 420)}px`;
+  panel.style.minWidth = `${Math.max(rect.width, 560)}px`;
   panel.style.display = 'flex';
 
   return panel;
