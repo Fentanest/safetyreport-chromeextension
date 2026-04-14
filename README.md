@@ -3,6 +3,8 @@
 안전신문고 민원 처리 현황을 Chrome 브라우저에서 바로 확인할 수 있는 확장 프로그램입니다.  
 [나만의 안전신문고 서버](https://github.com/Fentanest/safetyreport)와 연동하여 동작합니다.
 
+![예시 화면](example.png)
+
 ---
 
 ## 주요 기능
