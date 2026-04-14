@@ -32,8 +32,12 @@
         "https://www.safetyreport.go.kr/*",
         "http://www.safetyreport.go.kr/*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
