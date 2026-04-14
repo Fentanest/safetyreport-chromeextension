@@ -5,7 +5,7 @@
 }
 
 body {
-  width: 320px;
+  width: 360px;
   font-family: -apple-system, 'Segoe UI', sans-serif;
   font-size: 13px;
   background: #f8f9fa;
@@ -222,16 +222,25 @@ main {
 }
 
 .recent-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
+  padding: 5px 0;
   border-bottom: 1px solid #f1f5f9;
-  gap: 8px;
 }
 
 .recent-item:last-child {
   border-bottom: none;
+}
+
+.recent-row1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.recent-row2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .recent-name {
@@ -250,6 +259,23 @@ main {
   border-radius: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.recent-meta {
+  font-size: 10px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.recent-fine {
+  font-size: 10px;
+  font-weight: 600;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
 }
 
 .state-accept { background: #dcfce7; color: #16a34a; }

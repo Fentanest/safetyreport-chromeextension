@@ -31,7 +31,7 @@ async function apiFetch(serverUrl, apiKey, path, options = {}) {
 async function updateBadge(serverUrl, apiKey) {
   try {
     const res = await apiFetch(serverUrl, apiKey, '/api/v1/summary');
-    const count = res.data?.processing_count ?? 0;
+    const count = res.data?.processingCount ?? 0;  // camelCase
     if (count > 0) {
       chrome.action.setBadgeText({ text: String(count) });
       chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
@@ -44,27 +44,38 @@ async function updateBadge(serverUrl, apiKey) {
 }
 
 // --- 크롤링 완료 알림 ---
+// wasCrawling을 storage.local에 저장 — service worker 재시작 시에도 유지
 
-// 이전에 크롤링이 실행 중이었는지 추적
-let wasCrawling = false;
+async function getWasCrawling() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['wasCrawling'], (d) => resolve(d.wasCrawling || false));
+  });
+}
+
+async function setWasCrawling(value) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ wasCrawling: value }, resolve);
+  });
+}
 
 async function pollCrawlStatus() {
   const { serverUrl, apiKey, notifyCrawlDone } = await getConfig();
   if (!serverUrl || !apiKey) return;
 
   try {
-    // 현재 크롤링 상태 확인
-    const statusRes = await apiFetch(serverUrl, apiKey, '/api/v1/crawl/status');
+    const [statusRes, wasCrawling] = await Promise.all([
+      apiFetch(serverUrl, apiKey, '/api/v1/crawl/status'),
+      getWasCrawling(),
+    ]);
     const isRunning = statusRes.running ?? false;
 
     // 실행 중 → 완료 전환 감지
     if (wasCrawling && !isRunning) {
-      // crawl/done으로 변경 건수 확인
       try {
         const doneRes = await apiFetch(serverUrl, apiKey, '/api/v1/crawl/done');
         if (doneRes.done && notifyCrawlDone !== false) {
           const changed = doneRes.changed_count ?? 0;
-          chrome.notifications.create({
+          chrome.notifications.create(`crawl_done_${Date.now()}`, {
             type: 'basic',
             iconUrl: 'icons/icon48.png',
             title: '크롤링 완료',
@@ -79,12 +90,9 @@ async function pollCrawlStatus() {
       }
     }
 
-    wasCrawling = isRunning;
-
-    // 배지 업데이트
+    await setWasCrawling(isRunning);
     await updateBadge(serverUrl, apiKey);
   } catch {
-    // 연결 실패 시 배지 초기화
     chrome.action.setBadgeText({ text: '' });
   }
 }
@@ -94,7 +102,6 @@ async function pollCrawlStatus() {
 async function resetAlarm() {
   const { pollInterval } = await getConfig();
   const minutes = Math.max(1, parseInt(pollInterval, 10) || 5);
-
   await chrome.alarms.clear(ALARM_NAME);
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: minutes });
 }
@@ -140,7 +147,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         .then((data) => sendResponse({ data }))
         .catch((err) => sendResponse({ error: err.message }));
     });
-    return true; // 비동기 응답
+    return true;
   }
 
   return false;

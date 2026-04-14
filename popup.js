@@ -78,11 +78,24 @@ function renderStats(data) {
   }
 
   recent.forEach((item) => {
+    const fine = item.범칙금_과태료 && item.범칙금_과태료 !== '미확인'
+      ? `<span class="recent-fine">${item.범칙금_과태료}</span>` : '';
+
+    const meta = [
+      item.신고번호  ? `<span class="recent-meta">#${item.신고번호}</span>`  : '',
+      item.차량번호  ? `<span class="recent-meta">🚗 ${item.차량번호}</span>` : '',
+      item.담당자    ? `<span class="recent-meta">👤 ${item.담당자}</span>`   : '',
+    ].filter(Boolean).join('');
+
     const div = document.createElement('div');
     div.className = 'recent-item';
     div.innerHTML = `
-      <span class="recent-name" title="${item.신고명 || ''}">${item.신고명 || '(이름 없음)'}</span>
-      <span class="recent-state ${stateClass(item.처리상태)}">${item.처리상태 || '-'}</span>
+      <div class="recent-row1">
+        <span class="recent-name" title="${item.신고명 || ''}">${item.신고명 || '(이름 없음)'}</span>
+        <span class="recent-state ${stateClass(item.처리상태)}">${item.처리상태 || '-'}</span>
+        ${fine}
+      </div>
+      ${meta ? `<div class="recent-row2">${meta}</div>` : ''}
     `;
     list.appendChild(div);
   });
