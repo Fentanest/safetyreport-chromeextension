@@ -34,26 +34,30 @@ el('btnSave').addEventListener('click', () => {
     return;
   }
 
-  chrome.storage.sync.set(
-    { serverUrl, apiKey, notifyCrawlDone, pollInterval },
-    () => {
-      // 서버 origin에 대한 호스트 권한 요청 (optional_host_permissions)
-      try {
-        const origin = new URL(serverUrl).origin + '/*';
-        chrome.permissions.request({ origins: [origin] }, (granted) => {
-          if (!granted) {
-            errMsg.textContent = '서버 접근 권한이 허용되지 않았습니다. 저장은 완료됐습니다.';
-          }
-        });
-      } catch {
-        // URL 파싱 실패는 무시 (저장은 완료)
-      }
+  let origin;
+  try {
+    origin = new URL(serverUrl).origin + '/*';
+  } catch {
+    errMsg.textContent = '유효하지 않은 서버 주소입니다.';
+    return;
+  }
 
-      saveMsg.textContent = '저장되었습니다.';
-      chrome.runtime.sendMessage({ type: 'RESET_ALARM', pollInterval });
-      setTimeout(() => { saveMsg.textContent = ''; }, 2500);
+  // 권한 요청은 반드시 사용자 제스처 핸들러에서 직접(동기적으로) 호출해야 함.
+  // 콜백 내부에서 호출하면 사용자 제스처 컨텍스트가 만료되어 조용히 실패함.
+  chrome.permissions.request({ origins: [origin] }, (granted) => {
+    if (!granted) {
+      errMsg.textContent = '서버 접근 권한이 허용되지 않았습니다. 설정이 저장되지 않았습니다.';
+      return;
     }
-  );
+    chrome.storage.sync.set(
+      { serverUrl, apiKey, notifyCrawlDone, pollInterval },
+      () => {
+        saveMsg.textContent = '저장되었습니다.';
+        chrome.runtime.sendMessage({ type: 'RESET_ALARM', pollInterval });
+        setTimeout(() => { saveMsg.textContent = ''; }, 2500);
+      }
+    );
+  });
 });
 
 // 연결 테스트
