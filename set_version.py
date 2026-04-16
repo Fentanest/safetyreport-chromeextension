@@ -22,8 +22,8 @@ def read_version():
 
 
 def validate_version(v):
-    if not re.fullmatch(r'\d+\.\d+\.\d+', v):
-        raise ValueError(f'버전 형식이 올바르지 않습니다: "{v}" (예: 1.2.3)')
+    if not re.fullmatch(r'\d+\.\d+\.\d+(\.\d+)?', v):
+        raise ValueError(f'버전 형식이 올바르지 않습니다: "{v}" (예: 1.2.3 또는 1.2.3.4)')
 
 
 def apply_version(version):
