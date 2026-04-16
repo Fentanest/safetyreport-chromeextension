@@ -321,26 +321,52 @@ function attachToInput(inputEl) {
 }
 
 // #VHRNO를 즉시 찾거나, MutationObserver로 동적 생성 대기
+let attachedInput = null;
+let pendingObserver = null;
+
 function init() {
+  // 이미 연결 중인 Observer가 있으면 정리
+  if (pendingObserver) {
+    pendingObserver.disconnect();
+    pendingObserver = null;
+  }
+
   const existing = document.getElementById('VHRNO');
-  if (existing) {
+  if (existing && existing !== attachedInput) {
+    attachedInput = existing;
     attachToInput(existing);
     return;
   }
 
-  // 동적으로 삽입되는 경우 대기 (최대 30초)
-  const observer = new MutationObserver(() => {
-    const inputEl = document.getElementById('VHRNO');
-    if (inputEl) {
+  if (!existing) {
+    // 동적으로 삽입되는 경우 대기 (최대 30초)
+    const observer = new MutationObserver(() => {
+      const inputEl = document.getElementById('VHRNO');
+      if (inputEl && inputEl !== attachedInput) {
+        observer.disconnect();
+        pendingObserver = null;
+        attachedInput = inputEl;
+        attachToInput(inputEl);
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    pendingObserver = observer;
+    setTimeout(() => {
       observer.disconnect();
-      attachToInput(inputEl);
-    }
-  });
-
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  setTimeout(() => observer.disconnect(), 30000);
+      if (pendingObserver === observer) pendingObserver = null;
+    }, 30000);
+  }
 }
+
+// SPA 해시 이동 감지 — 새 신고 폼으로 전환 시 재초기화
+window.addEventListener('hashchange', () => {
+  attachedInput = null;
+  lastQueried = '';
+  lastData = null;
+  hidePanel();
+  setTimeout(init, 300); // SPA 렌더링 대기
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
