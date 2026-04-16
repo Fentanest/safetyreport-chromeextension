@@ -6,7 +6,8 @@
   "permissions": [
     "storage",
     "notifications",
-    "alarms"
+    "alarms",
+    "clipboardWrite"
   ],
   "optional_host_permissions": [
     "<all_urls>"

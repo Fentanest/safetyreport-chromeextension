@@ -61,7 +61,7 @@ el('btnSave').addEventListener('click', () => {
 });
 
 // 연결 테스트
-el('btnTest').addEventListener('click', async () => {
+el('btnTest').addEventListener('click', () => {
   const serverUrl = el('serverUrl').value.trim().replace(/\/$/, '');
   const apiKey = el('apiKey').value.trim();
   const resultEl = el('testResult');
@@ -75,19 +75,37 @@ el('btnTest').addEventListener('click', async () => {
     return;
   }
 
+  let origin;
   try {
-    const res = await fetch(`${serverUrl}/api/v1/crawl/status`, {
-      headers: { 'X-API-Key': apiKey },
-    });
-    if (res.ok) {
-      resultEl.textContent = '연결 성공!';
-      resultEl.classList.add('test-ok');
-    } else {
-      resultEl.textContent = `실패 (HTTP ${res.status})`;
-      resultEl.classList.add('test-fail');
-    }
-  } catch (err) {
-    resultEl.textContent = `연결 실패: ${err.message}`;
+    origin = new URL(serverUrl).origin + '/*';
+  } catch {
+    resultEl.textContent = '유효하지 않은 서버 주소입니다.';
     resultEl.classList.add('test-fail');
+    return;
   }
+
+  // 테스트 전에도 권한 요청 필요 (사용자 제스처 컨텍스트에서 직접 호출)
+  chrome.permissions.request({ origins: [origin] }, (granted) => {
+    if (!granted) {
+      resultEl.textContent = '서버 접근 권한이 거부되었습니다.';
+      resultEl.classList.add('test-fail');
+      return;
+    }
+    fetch(`${serverUrl}/api/v1/crawl/status`, {
+      headers: { 'X-API-Key': apiKey },
+    })
+      .then((res) => {
+        if (res.ok) {
+          resultEl.textContent = '연결 성공!';
+          resultEl.classList.add('test-ok');
+        } else {
+          resultEl.textContent = `실패 (HTTP ${res.status})`;
+          resultEl.classList.add('test-fail');
+        }
+      })
+      .catch((err) => {
+        resultEl.textContent = `연결 실패: ${err.message}`;
+        resultEl.classList.add('test-fail');
+      });
+  });
 });

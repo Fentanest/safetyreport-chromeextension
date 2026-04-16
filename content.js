@@ -92,7 +92,7 @@ function showError(anchorEl, msg) {
       <span class="sr-panel-title">나만의 안전신문고</span>
       <button class="sr-close" id="sr-close-btn">&#x2715;</button>
     </div>
-    <div class="sr-empty sr-error">서버 연결 실패: ${msg}</div>
+    <div class="sr-empty sr-error">서버 연결 실패: ${esc(msg)}</div>
   `;
   bindClose(panel);
 }
@@ -113,7 +113,7 @@ function showResults(anchorEl, vehicleNumber, data) {
   panel.innerHTML = `
     <div class="sr-panel-header">
       <span class="sr-panel-title">
-        <strong>${vehicleNumber}</strong> 이전 신고 내역
+        <strong>${esc(vehicleNumber)}</strong> 이전 신고 내역
         <span class="sr-count">${records.length}건</span>
       </span>
       <div class="sr-header-actions">

@@ -146,6 +146,23 @@ async function load() {
   }
 
   el('noConfig').classList.add('hidden');
+
+  // optional_host_permission 확인 — 스토어 설치 후 권한 미허용 시 fetch 차단됨
+  const origin = (() => {
+    try { return new URL(serverUrl).origin + '/*'; } catch { return null; }
+  })();
+  if (origin) {
+    const hasPermission = await new Promise(r =>
+      chrome.permissions.contains({ origins: [origin] }, r)
+    );
+    if (!hasPermission) {
+      setDot(el('connDot'), 'error');
+      el('connText').textContent = '권한 필요';
+      el('noPermission').classList.remove('hidden');
+      return;
+    }
+  }
+
   el('mainContent').classList.remove('hidden');
   el('mainFooter').classList.remove('hidden');
 
@@ -220,6 +237,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   el('btnStartCrawl').addEventListener('click', startCrawl);
   el('btnStopCrawl').addEventListener('click', stopCrawl);
+
+  el('btnGrantPermission').addEventListener('click', async () => {
+    const { serverUrl } = await getConfig();
+    let origin;
+    try { origin = new URL(serverUrl).origin + '/*'; } catch { return; }
+    chrome.permissions.request({ origins: [origin] }, (granted) => {
+      if (granted) {
+        el('noPermission').classList.add('hidden');
+        load();
+      } else {
+        el('permissionMsg').textContent = '권한이 거부되었습니다. 설정에서 서버 주소를 다시 저장해 보세요.';
+      }
+    });
+  });
 
   el('btnOpenDash').addEventListener('click', async () => {
     const { serverUrl } = await getConfig();
