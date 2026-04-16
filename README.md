@@ -20,15 +20,7 @@
 
 ## 설치
 
-Chrome 웹 스토어에 등록되지 않은 개발자 모드 확장입니다.
-
-1. 이 저장소를 클론하거나 ZIP으로 다운로드
-   ```
-   git clone https://github.com/Fentanest/safetyreport-chromeextension.git
-   ```
-2. Chrome 주소창에 `chrome://extensions` 입력
-3. 우측 상단 **개발자 모드** 활성화
-4. **압축 해제된 확장 프로그램 로드** 클릭 → 클론한 폴더 선택
+[Chrome 웹 스토어](https://chromewebstore.google.com/detail/%EB%82%98%EB%A7%8C%EC%9D%98-%EC%95%88%EC%A0%84%EC%8B%A0%EB%AC%B8%EA%B3%A0/pfoigdedcddegilmjmgojohalkighpgh)에서 바로 설치할 수 있습니다.
 
 ---
 
