@@ -88,7 +88,7 @@ function renderStats(data) {
     ].filter(Boolean).join('');
 
     const div = document.createElement('div');
-    div.className = 'recent-item' + (item.ID ? ' recent-item-link' : '');
+    div.className = 'recent-item' + (item.신고번호 ? ' recent-item-link' : '');
     div.innerHTML = `
       <div class="recent-row1">
         <span class="recent-name" title="${item.신고명 || ''}">${item.신고명 || '(이름 없음)'}</span>
@@ -97,10 +97,13 @@ function renderStats(data) {
       </div>
       ${meta ? `<div class="recent-row2">${meta}</div>` : ''}
     `;
-    if (item.ID) {
-      div.addEventListener('click', () => {
+    if (item.신고번호) {
+      div.addEventListener('click', async () => {
+        const { serverUrl } = await getConfig();
+        if (!serverUrl) return;
+        const base = serverUrl.replace(/\/$/, '');
         chrome.tabs.create({
-          url: `https://www.safetyreport.go.kr/#mypage/mysafereport/${item.ID}`,
+          url: `${base}/data/all?open=${encodeURIComponent(item.신고번호)}`,
         });
       });
     }

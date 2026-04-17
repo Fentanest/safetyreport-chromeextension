@@ -5,7 +5,7 @@
 }
 
 body {
-  width: 360px;
+  width: 380px;
   font-family: -apple-system, 'Segoe UI', sans-serif;
   font-size: 13px;
   background: #f8f9fa;
@@ -227,7 +227,7 @@ main {
 }
 
 .recent-list {
-  max-height: 120px;
+  max-height: 200px;
   overflow-y: auto;
 }
 
