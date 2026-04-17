@@ -168,13 +168,35 @@ async function load() {
 
   // 병렬 요청
   try {
-    const [summaryRes, crawlRes] = await Promise.all([
+    const [summaryRes, crawlRes, verRes] = await Promise.all([
       apiFetch('/api/v1/summary'),
       apiFetch('/api/v1/crawl/status'),
+      apiFetch('/api/v1/server/version').catch(() => null),
     ]);
 
     setDot(el('connDot'), 'ok');
     el('connText').textContent = '연결됨';
+
+    // 서버 버전 표시
+    const verEl = el('connVersion');
+    if (verRes?.version) {
+      const v = verRes.version;
+      const latest = verRes.latest_version;
+      const upToDate = verRes.up_to_date;
+      if (latest && !upToDate) {
+        verEl.textContent = `v${v} → ${latest}`;
+        verEl.className = 'conn-version ver-old';
+        verEl.title = `최신 버전: ${latest}`;
+      } else if (upToDate && latest) {
+        verEl.textContent = `v${v} ✓`;
+        verEl.className = 'conn-version ver-ok';
+        verEl.title = '최신 버전입니다';
+      } else {
+        verEl.textContent = `v${v}`;
+        verEl.className = 'conn-version ver-plain';
+        verEl.title = '버전 확인 불가';
+      }
+    }
 
     renderStats(summaryRes.data ?? {});
     renderCrawlStatus(crawlRes.running ?? false);

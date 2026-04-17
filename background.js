@@ -70,24 +70,40 @@ async function pollCrawlStatus() {
     const isRunning = statusRes.running ?? false;
 
     // 실행 중 → 완료 전환 감지
-    if (wasCrawling && !isRunning) {
+    if (wasCrawling && !isRunning && notifyCrawlDone !== false) {
+      let changed = 0;
+      let changes = [];
       try {
-        const doneRes = await apiFetch(serverUrl, apiKey, '/api/v1/crawl/done');
-        if (doneRes.done && notifyCrawlDone !== false) {
-          const changed = doneRes.changed_count ?? 0;
-          chrome.notifications.create(`crawl_done_${Date.now()}`, {
-            type: 'basic',
-            iconUrl: 'icons/icon48.png',
-            title: '크롤링 완료',
-            message: changed > 0
-              ? `${changed}건의 신고가 업데이트되었습니다.`
-              : '크롤링이 완료되었습니다.',
-            priority: 1,
-          });
+        const doneRes = await apiFetch(serverUrl, apiKey, '/api/v1/crawl/done/ext');
+        if (doneRes.done) {
+          changed = doneRes.changed_count ?? 0;
+          changes = doneRes.changes ?? [];
         }
       } catch {
-        // done 엔드포인트 실패는 무시
+        // 엔드포인트 실패 시 무시
       }
+
+      let message;
+      if (changes.length === 0) {
+        message = changed > 0 ? `${changed}건이 업데이트되었습니다.` : '크롤링이 완료되었습니다.';
+      } else {
+        const MAX = 3;
+        const lines = changes.slice(0, MAX).map((c) => {
+          const num = c.신고번호 ? `[${c.신고번호}]` : '';
+          const name = c.신고명 || '(제목 없음)';
+          return `${num} ${name}`.trim();
+        });
+        if (changes.length > MAX) lines.push(`외 ${changes.length - MAX}건`);
+        message = lines.join('\n');
+      }
+
+      chrome.notifications.create(`crawl_done_${Date.now()}`, {
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: `크롤링 완료${changed > 0 ? ` (${changed}건)` : ''}`,
+        message,
+        priority: 1,
+      });
     }
 
     await setWasCrawling(isRunning);
