@@ -262,9 +262,15 @@ async function handleVehicleInput(inputEl) {
   }
 }
 
-// --- 초기화 ---
+// #VHRNO를 즉시 찾거나, MutationObserver로 동적 생성 대기
+let attachedInput = null;
+let pendingObserver = null;
+let initTimer = null;
 
 function attachToInput(inputEl) {
+  if (inputEl._srAttached) return; // 중복 등록 방지
+  inputEl._srAttached = true;
+
   // 텍스트 변경 시
   inputEl.addEventListener('input', () => {
     clearTimeout(debounceTimer);
@@ -278,13 +284,11 @@ function attachToInput(inputEl) {
     const value = inputEl.value.trim().replace(/\s/g, '');
     if (value.length < 4) return;
 
-    // 같은 값이고 캐시가 있으면 API 호출 없이 즉시 재표시
     if (lastData && lastData.value === value) {
       showResults(inputEl, value, lastData.data);
       return;
     }
 
-    // 값이 바뀌었거나 캐시 없으면 재조회
     lastQueried = '';
     debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
   };
@@ -320,43 +324,40 @@ function attachToInput(inputEl) {
   }, { passive: true });
 }
 
-// #VHRNO를 즉시 찾거나, MutationObserver로 동적 생성 대기
-let attachedInput = null;
-let pendingObserver = null;
-
 function init() {
-  // 이미 연결 중인 Observer가 있으면 정리
   if (pendingObserver) {
     pendingObserver.disconnect();
     pendingObserver = null;
   }
 
   const existing = document.getElementById('VHRNO');
-  if (existing && existing !== attachedInput) {
-    attachedInput = existing;
-    attachToInput(existing);
+  if (existing) {
+    if (!existing._srAttached) {
+      attachedInput = existing;
+      attachToInput(existing);
+    }
     return;
   }
 
-  if (!existing) {
-    // 동적으로 삽입되는 경우 대기 (최대 30초)
-    const observer = new MutationObserver(() => {
-      const inputEl = document.getElementById('VHRNO');
-      if (inputEl && inputEl !== attachedInput) {
-        observer.disconnect();
-        pendingObserver = null;
+  // 동적으로 삽입되는 경우 대기 (최대 30초)
+  const observer = new MutationObserver(() => {
+    const inputEl = document.getElementById('VHRNO');
+    if (inputEl) {
+      observer.disconnect();
+      pendingObserver = null;
+      if (!inputEl._srAttached) {
         attachedInput = inputEl;
         attachToInput(inputEl);
       }
-    });
+    }
+  });
 
-    observer.observe(document.body, { childList: true, subtree: true });
-    pendingObserver = observer;
-    setTimeout(() => {
-      observer.disconnect();
-      if (pendingObserver === observer) pendingObserver = null;
-    }, 30000);
-  }
+  observer.observe(document.body, { childList: true, subtree: true });
+  pendingObserver = observer;
+  setTimeout(() => {
+    observer.disconnect();
+    if (pendingObserver === observer) pendingObserver = null;
+  }, 30000);
 }
 
 // SPA 해시 이동 감지 — 새 신고 폼으로 전환 시 재초기화
@@ -365,7 +366,8 @@ window.addEventListener('hashchange', () => {
   lastQueried = '';
   lastData = null;
   hidePanel();
-  setTimeout(init, 300); // SPA 렌더링 대기
+  clearTimeout(initTimer);
+  initTimer = setTimeout(init, 300); // SPA 렌더링 대기
 });
 
 if (document.readyState === 'loading') {

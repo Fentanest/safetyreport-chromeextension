@@ -147,21 +147,38 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   // 콘텐츠 스크립트 대신 fetch (HTTPS 페이지 → HTTP 서버 Mixed Content 우회)
   if (msg.type === 'FETCH_VEHICLE') {
-    getConfig().then(({ serverUrl, apiKey }) => {
+    getConfig().then(async ({ serverUrl, apiKey }) => {
       if (!serverUrl || !apiKey) {
         sendResponse({ error: 'NO_CONFIG' });
         return;
       }
       const base = serverUrl.replace(/\/$/, '');
-      fetch(`${base}/api/v1/vehicle/${encodeURIComponent(msg.vehicleNumber)}`, {
-        headers: { 'X-API-Key': apiKey },
-      })
+      const url = `${base}/api/v1/vehicle/${encodeURIComponent(msg.vehicleNumber)}`;
+      const headers = { 'X-API-Key': apiKey };
+
+      const tryFetch = () => fetch(url, { headers })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
-        })
-        .then((data) => sendResponse({ data }))
-        .catch((err) => sendResponse({ error: err.message }));
+        });
+
+      try {
+        const data = await tryFetch();
+        sendResponse({ data });
+      } catch (err) {
+        // 5xx 오류는 1회 재시도
+        if (/HTTP 5\d\d/.test(err.message)) {
+          try {
+            await new Promise((r) => setTimeout(r, 1000));
+            const data = await tryFetch();
+            sendResponse({ data });
+          } catch (err2) {
+            sendResponse({ error: err2.message });
+          }
+        } else {
+          sendResponse({ error: err.message });
+        }
+      }
     });
     return true;
   }
