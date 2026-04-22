@@ -486,7 +486,7 @@ function buildAddrStats(records) {
   const officers = {};
 
   records.forEach((r) => {
-    const s = r.처리상태 || '';
+    const s = (r.처리상태 || '').trim();
     const fp = r.범칙금_과태료 || '';
     const isProcessing = ['처리중', '진행', '진행중'].includes(s);
     const isReject = ['불수용', '기타'].includes(s);
@@ -494,7 +494,7 @@ function buildAddrStats(records) {
 
     if (isProcessing) st.처리중++;
     else if (s === '수용') st.수용++;
-    else if (s === '일부수용') st.일부수용++;
+    else if (s.includes('일부수용')) st.일부수용++;
     else if (isReject) st.불수용++;
 
     if (fp.includes('과태료')) { ft.과태료++; ft.총액 += amount; }
@@ -509,7 +509,7 @@ function buildAddrStats(records) {
       o.total++;
       if (isProcessing) o.처리중++;
       else if (s === '수용') o.수용++;
-      else if (s === '일부수용') o.일부수용++;
+      else if (s.includes('일부수용')) o.일부수용++;
       else if (isReject) o.불수용++;
       if (fp.includes('과태료')) { o.과태료++; o.총액 += amount; }
       else if (fp.includes('범칙금') || fp.includes('경고')) o.범칙금++;
@@ -537,13 +537,15 @@ function buildAddrStats(records) {
 
   const topOfficers = Object.entries(officers).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
   const officerRows = topOfficers.map(([name, o]) => {
-    const badges = [
+    const statusBadges = [
       o.처리중  ? badge('sr-state-processing', '처리중',   o.처리중,  o.total) : '',
       o.수용    ? badge('sr-state-accept',     '수용',     o.수용,    o.total) : '',
       o.일부수용 ? badge('sr-state-partial',   '일부수용', o.일부수용, o.total) : '',
       o.불수용  ? badge('sr-state-reject',     '불수용',   o.불수용,  o.total) : '',
-      o.과태료  ? `<span class="sr-sum-item sr-fine-fine">과태료 <b>${o.과태료}</b>${o.총액 ? `<span class="sr-pct">${fmtAmount(o.총액)}</span>` : ''}</span>` : '',
-      o.범칙금  ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 <b>${o.범칙금}</b></span>` : '',
+    ].filter(Boolean).join('');
+    const fineBadges = [
+      o.과태료 ? `<span class="sr-sum-item sr-fine-fine">과태료 <b>${o.과태료}</b>${o.총액 ? `<span class="sr-pct">${fmtAmount(o.총액)}</span>` : ''}</span>` : '',
+      o.범칙금 ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 <b>${o.범칙금}</b></span>` : '',
     ].filter(Boolean).join('');
     return `
       <div class="sr-addr-officer-row">
@@ -551,7 +553,8 @@ function buildAddrStats(records) {
           <span class="sr-addr-officer-name">${esc(name)}</span>
           <span class="sr-addr-officer-total">${o.total}건</span>
         </div>
-        <div class="sr-addr-officer-badges">${badges}</div>
+        ${statusBadges ? `<div class="sr-addr-officer-badges">${statusBadges}</div>` : ''}
+        ${fineBadges   ? `<div class="sr-addr-officer-badges">${fineBadges}</div>` : ''}
       </div>
     `;
   }).join('');
