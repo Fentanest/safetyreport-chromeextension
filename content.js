@@ -464,12 +464,25 @@ function showAddrResults(address, data) {
   });
 }
 
+// "과태료: 30,000원" 또는 "범칙금: 50,000원" 문자열에서 숫자 추출
+function parseFineAmount(fp) {
+  if (!fp) return 0;
+  const m = fp.match(/([\d,]+)원/);
+  if (!m) return 0;
+  return parseInt(m[1].replace(/,/g, ''), 10) || 0;
+}
+
+function fmtAmount(won) {
+  if (!won) return '';
+  return won.toLocaleString('ko-KR') + '원';
+}
+
 function buildAddrStats(records) {
   if (records.length === 0) return '';
 
   const total = records.length;
   const st = { 처리중: 0, 수용: 0, 일부수용: 0, 불수용: 0 };
-  const ft = { 과태료: 0, 범칙금: 0 };
+  const ft = { 과태료: 0, 범칙금: 0, 총액: 0 };
   const officers = {};
 
   records.forEach((r) => {
@@ -477,19 +490,20 @@ function buildAddrStats(records) {
     const fp = r.범칙금_과태료 || '';
     const isProcessing = ['처리중', '진행', '진행중'].includes(s);
     const isReject = ['불수용', '기타'].includes(s);
+    const amount = parseFineAmount(fp);
 
     if (isProcessing) st.처리중++;
     else if (s === '수용') st.수용++;
     else if (s === '일부수용') st.일부수용++;
     else if (isReject) st.불수용++;
 
-    if (fp.includes('과태료')) ft.과태료++;
+    if (fp.includes('과태료')) { ft.과태료++; ft.총액 += amount; }
     else if (fp.includes('범칙금') || fp.includes('경고')) ft.범칙금++;
 
     const officer = r.담당자;
     if (officer && officer !== '미지정' && officer !== '') {
       if (!officers[officer]) {
-        officers[officer] = { total: 0, 처리중: 0, 수용: 0, 일부수용: 0, 불수용: 0, 과태료: 0, 범칙금: 0 };
+        officers[officer] = { total: 0, 처리중: 0, 수용: 0, 일부수용: 0, 불수용: 0, 과태료: 0, 범칙금: 0, 총액: 0 };
       }
       const o = officers[officer];
       o.total++;
@@ -497,34 +511,39 @@ function buildAddrStats(records) {
       else if (s === '수용') o.수용++;
       else if (s === '일부수용') o.일부수용++;
       else if (isReject) o.불수용++;
-      if (fp.includes('과태료')) o.과태료++;
+      if (fp.includes('과태료')) { o.과태료++; o.총액 += amount; }
       else if (fp.includes('범칙금') || fp.includes('경고')) o.범칙금++;
     }
   });
 
   const pct = (n, base) => base > 0 ? Math.round(n / base * 100) : 0;
+  const badge = (cls, label, n, base) =>
+    `<span class="sr-sum-item ${cls}">${label} <b>${n}</b><span class="sr-pct">${pct(n, base)}%</span></span>`;
 
   const statusItems = [
-    st.처리중  ? `<span class="sr-sum-item sr-state-processing">처리중 ${st.처리중} <small>(${pct(st.처리중, total)}%)</small></span>` : '',
-    st.수용    ? `<span class="sr-sum-item sr-state-accept">수용 ${st.수용} <small>(${pct(st.수용, total)}%)</small></span>` : '',
-    st.일부수용 ? `<span class="sr-sum-item sr-state-partial">일부수용 ${st.일부수용} <small>(${pct(st.일부수용, total)}%)</small></span>` : '',
-    st.불수용  ? `<span class="sr-sum-item sr-state-reject">불수용 ${st.불수용} <small>(${pct(st.불수용, total)}%)</small></span>` : '',
+    st.처리중  ? badge('sr-state-processing', '처리중', st.처리중, total) : '',
+    st.수용    ? badge('sr-state-accept',     '수용',   st.수용,   total) : '',
+    st.일부수용 ? badge('sr-state-partial',    '일부수용', st.일부수용, total) : '',
+    st.불수용  ? badge('sr-state-reject',     '불수용', st.불수용,  total) : '',
   ].filter(Boolean).join('');
 
+  const fineAmountLine = ft.총액 > 0
+    ? `<div class="sr-addr-fine-total">총 과태료 <b>${fmtAmount(ft.총액)}</b></div>` : '';
+
   const fineItems = [
-    ft.과태료 ? `<span class="sr-sum-item sr-fine-fine">과태료 ${ft.과태료} <small>(${pct(ft.과태료, total)}%)</small></span>` : '',
-    ft.범칙금 ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${ft.범칙금} <small>(${pct(ft.범칙금, total)}%)</small></span>` : '',
+    ft.과태료 ? badge('sr-fine-fine',    '과태료',      ft.과태료, total) : '',
+    ft.범칙금 ? badge('sr-fine-penalty', '경고/범칙금', ft.범칙금, total) : '',
   ].filter(Boolean).join('');
 
   const topOfficers = Object.entries(officers).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
   const officerRows = topOfficers.map(([name, o]) => {
     const badges = [
-      o.처리중  ? `<span class="sr-sum-item sr-state-processing">처리중 ${o.처리중}<small>(${pct(o.처리중, o.total)}%)</small></span>` : '',
-      o.수용    ? `<span class="sr-sum-item sr-state-accept">수용 ${o.수용}<small>(${pct(o.수용, o.total)}%)</small></span>` : '',
-      o.일부수용 ? `<span class="sr-sum-item sr-state-partial">일부수용 ${o.일부수용}<small>(${pct(o.일부수용, o.total)}%)</small></span>` : '',
-      o.불수용  ? `<span class="sr-sum-item sr-state-reject">불수용 ${o.불수용}<small>(${pct(o.불수용, o.total)}%)</small></span>` : '',
-      o.과태료  ? `<span class="sr-sum-item sr-fine-fine">과태료 ${o.과태료}</span>` : '',
-      o.범칙금  ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${o.범칙금}</span>` : '',
+      o.처리중  ? badge('sr-state-processing', '처리중',   o.처리중,  o.total) : '',
+      o.수용    ? badge('sr-state-accept',     '수용',     o.수용,    o.total) : '',
+      o.일부수용 ? badge('sr-state-partial',   '일부수용', o.일부수용, o.total) : '',
+      o.불수용  ? badge('sr-state-reject',     '불수용',   o.불수용,  o.total) : '',
+      o.과태료  ? `<span class="sr-sum-item sr-fine-fine">과태료 <b>${o.과태료}</b>${o.총액 ? `<span class="sr-pct">${fmtAmount(o.총액)}</span>` : ''}</span>` : '',
+      o.범칙금  ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 <b>${o.범칙금}</b></span>` : '',
     ].filter(Boolean).join('');
     return `
       <div class="sr-addr-officer-row">
@@ -539,7 +558,12 @@ function buildAddrStats(records) {
 
   return `
     ${statusItems ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">처리상태</div><div class="sr-addr-stat-row">${statusItems}</div></div>` : ''}
-    ${fineItems   ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">과태료/범칙금</div><div class="sr-addr-stat-row">${fineItems}</div></div>` : ''}
+    ${fineItems || fineAmountLine ? `
+      <div class="sr-addr-stat-section">
+        <div class="sr-addr-stat-label">과태료/범칙금</div>
+        <div class="sr-addr-stat-row">${fineItems}</div>
+        ${fineAmountLine}
+      </div>` : ''}
     ${officerRows ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">담당자</div><div class="sr-addr-officers">${officerRows}</div></div>` : ''}
   `;
 }

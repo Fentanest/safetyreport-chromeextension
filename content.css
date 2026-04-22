@@ -165,11 +165,12 @@
 }
 
 .sr-rnum {
-  font-size: 10px;
-  color: #94a3b8;
+  font-size: 11px;
+  color: #64748b;
   white-space: nowrap;
   flex-shrink: 0;
   font-family: monospace;
+  font-weight: 500;
 }
 
 .sr-row-meta {
@@ -338,10 +339,28 @@
   gap: 4px;
 }
 
-.sr-addr-stat-row .sr-sum-item small {
+.sr-addr-stat-row .sr-sum-item b,
+.sr-addr-officer-badges .sr-sum-item b {
+  font-weight: 700;
+  margin: 0 1px;
+}
+
+.sr-pct {
   font-size: 10px;
-  opacity: 0.75;
-  margin-left: 1px;
+  opacity: 0.65;
+  margin-left: 3px;
+}
+
+.sr-addr-fine-total {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #c2410c;
+  font-weight: 500;
+}
+
+.sr-addr-fine-total b {
+  font-weight: 700;
+  margin-left: 3px;
 }
 
 /* 담당자 상세 목록 */
