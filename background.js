@@ -146,14 +146,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   // 콘텐츠 스크립트 대신 fetch (HTTPS 페이지 → HTTP 서버 Mixed Content 우회)
-  if (msg.type === 'FETCH_VEHICLE') {
+  if (msg.type === 'FETCH_VEHICLE' || msg.type === 'FETCH_ADDRESS') {
     getConfig().then(async ({ serverUrl, apiKey }) => {
       if (!serverUrl || !apiKey) {
         sendResponse({ error: 'NO_CONFIG' });
         return;
       }
       const base = serverUrl.replace(/\/$/, '');
-      const url = `${base}/api/v1/vehicle/${encodeURIComponent(msg.vehicleNumber)}`;
+      const url = msg.type === 'FETCH_VEHICLE'
+        ? `${base}/api/v1/vehicle/${encodeURIComponent(msg.vehicleNumber)}`
+        : `${base}/api/v1/address?q=${encodeURIComponent(msg.address)}`;
       const headers = { 'X-API-Key': apiKey };
 
       const tryFetch = () => fetch(url, { headers })
@@ -162,23 +164,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return res.json();
         });
 
-      try {
-        const data = await tryFetch();
-        sendResponse({ data });
-      } catch (err) {
-        // 5xx 오류는 1회 재시도
-        if (/HTTP 5\d\d/.test(err.message)) {
-          try {
-            await new Promise((r) => setTimeout(r, 1000));
-            const data = await tryFetch();
-            sendResponse({ data });
-          } catch (err2) {
-            sendResponse({ error: err2.message });
+      // 5xx(특히 502)는 최대 3회 재시도, 딜레이 2→4→6초
+      const MAX_RETRIES = 3;
+      let lastErr;
+      for (let i = 0; i <= MAX_RETRIES; i++) {
+        try {
+          const data = await tryFetch();
+          sendResponse({ data });
+          return;
+        } catch (err) {
+          lastErr = err;
+          if (i < MAX_RETRIES && /HTTP 5\d\d/.test(err.message)) {
+            await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+          } else {
+            break;
           }
-        } else {
-          sendResponse({ error: err.message });
         }
       }
+      sendResponse({ error: lastErr.message });
     });
     return true;
   }

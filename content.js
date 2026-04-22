@@ -336,27 +336,218 @@ function init() {
       attachedInput = existing;
       attachToInput(existing);
     }
-    return;
+  } else {
+    // 동적으로 삽입되는 경우 대기 (최대 30초)
+    const observer = new MutationObserver(() => {
+      const inputEl = document.getElementById('VHRNO');
+      if (inputEl) {
+        observer.disconnect();
+        pendingObserver = null;
+        if (!inputEl._srAttached) {
+          attachedInput = inputEl;
+          attachToInput(inputEl);
+        }
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    pendingObserver = observer;
+    setTimeout(() => {
+      observer.disconnect();
+      if (pendingObserver === observer) pendingObserver = null;
+    }, 30000);
   }
 
-  // 동적으로 삽입되는 경우 대기 (최대 30초)
-  const observer = new MutationObserver(() => {
-    const inputEl = document.getElementById('VHRNO');
-    if (inputEl) {
-      observer.disconnect();
-      pendingObserver = null;
-      if (!inputEl._srAttached) {
-        attachedInput = inputEl;
-        attachToInput(inputEl);
+  initAddressWatch();
+}
+
+// --- 주소 이전 신고 패널 (우측 고정) ---
+
+const ADDR_PANEL_ID = 'sr-address-panel';
+let addrDebounceTimer = null;
+let lastAddrQueried = '';
+let pendingAddrObserver = null;
+
+function fetchAddressReports(address) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'FETCH_ADDRESS', address },
+      (response) => {
+        if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+        if (response.error) { reject(new Error(response.error)); return; }
+        resolve(response.data);
       }
+    );
+  });
+}
+
+function buildAddrPanel() {
+  let panel = document.getElementById(ADDR_PANEL_ID);
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = ADDR_PANEL_ID;
+    document.body.appendChild(panel);
+  }
+  return panel;
+}
+
+function showAddrLoading() {
+  const panel = buildAddrPanel();
+  panel.style.display = 'flex';
+  panel.innerHTML = `
+    <div class="sr-addr-header">
+      <span class="sr-addr-title">주소 신고 내역 조회 중...</span>
+    </div>
+    <div class="sr-loading" style="padding:12px;">&#9679; &#9679; &#9679;</div>
+  `;
+}
+
+function showAddrResults(address, data) {
+  const panel = buildAddrPanel();
+  const records = data.data || [];
+
+  panel.style.display = 'flex';
+  panel.innerHTML = `
+    <div class="sr-addr-header">
+      <div class="sr-addr-title-wrap">
+        <span class="sr-addr-title" title="${esc(address)}">${esc(address)}</span>
+        <span class="sr-count">${records.length}건</span>
+      </div>
+      <button class="sr-close" id="sr-addr-close-btn">&#x2715;</button>
+    </div>
+    <div class="sr-addr-stats-wrap">
+      ${buildAddrStats(records)}
+    </div>
+    <div class="sr-list">
+      ${records.length === 0
+        ? '<div class="sr-empty">이 주소에서 신고한 내역이 없습니다.</div>'
+        : records.map(buildRow).join('')}
+    </div>
+  `;
+
+  panel.querySelector('#sr-addr-close-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    panel.style.display = 'none';
+  });
+
+  panel.querySelector('.sr-list')?.addEventListener('click', (e) => {
+    const row = e.target.closest('.sr-row-link');
+    if (!row) return;
+    e.stopPropagation();
+    window.open(row.dataset.url, '_blank');
+  });
+}
+
+function buildAddrStats(records) {
+  if (records.length === 0) return '';
+
+  const total = records.length;
+  const st = { 처리중: 0, 수용: 0, 일부수용: 0, 불수용: 0 };
+  const ft = { 과태료: 0, 범칙금: 0 };
+  const officers = {};
+
+  records.forEach((r) => {
+    const s = r.처리상태 || '';
+    const fp = r.범칙금_과태료 || '';
+    if (['처리중', '진행', '진행중'].includes(s)) st.처리중++;
+    else if (s === '수용') st.수용++;
+    else if (s === '일부수용') st.일부수용++;
+    else if (['불수용', '기타'].includes(s)) st.불수용++;
+    if (fp.includes('과태료')) ft.과태료++;
+    else if (fp.includes('범칙금') || fp.includes('경고')) ft.범칙금++;
+    const officer = r.담당자;
+    if (officer && officer !== '미지정' && officer !== '') {
+      officers[officer] = (officers[officer] || 0) + 1;
     }
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
-  pendingObserver = observer;
+  const pct = (n) => total > 0 ? Math.round(n / total * 100) : 0;
+
+  const statusItems = [
+    st.처리중 ? `<span class="sr-sum-item sr-state-processing">처리중 ${st.처리중} <small>(${pct(st.처리중)}%)</small></span>` : '',
+    st.수용    ? `<span class="sr-sum-item sr-state-accept">수용 ${st.수용} <small>(${pct(st.수용)}%)</small></span>` : '',
+    st.일부수용 ? `<span class="sr-sum-item sr-state-partial">일부수용 ${st.일부수용} <small>(${pct(st.일부수용)}%)</small></span>` : '',
+    st.불수용  ? `<span class="sr-sum-item sr-state-reject">불수용 ${st.불수용} <small>(${pct(st.불수용)}%)</small></span>` : '',
+  ].filter(Boolean).join('');
+
+  const fineItems = [
+    ft.과태료  ? `<span class="sr-sum-item sr-fine-fine">과태료 ${ft.과태료} <small>(${pct(ft.과태료)}%)</small></span>` : '',
+    ft.범칙금  ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${ft.범칙금} <small>(${pct(ft.범칙금)}%)</small></span>` : '',
+  ].filter(Boolean).join('');
+
+  const topOfficers = Object.entries(officers).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const officerRows = topOfficers.map(([name, cnt]) => `
+    <div class="sr-addr-officer-row">
+      <span class="sr-addr-officer-name">${esc(name)}</span>
+      <span class="sr-addr-officer-bar-wrap">
+        <span class="sr-addr-officer-bar" style="width:${pct(cnt)}%"></span>
+      </span>
+      <span class="sr-addr-officer-cnt">${cnt}건</span>
+    </div>
+  `).join('');
+
+  return `
+    ${statusItems ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">처리상태</div><div class="sr-addr-stat-row">${statusItems}</div></div>` : ''}
+    ${fineItems   ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">과태료/범칙금</div><div class="sr-addr-stat-row">${fineItems}</div></div>` : ''}
+    ${officerRows ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">담당자</div><div class="sr-addr-officers">${officerRows}</div></div>` : ''}
+  `;
+}
+
+async function handleAddressChange(address) {
+  address = address.trim();
+  if (!address || address.length < 5) return;
+  if (address === lastAddrQueried) return;
+  lastAddrQueried = address;
+
+  showAddrLoading();
+  try {
+    const data = await fetchAddressReports(address);
+    showAddrResults(address, data);
+  } catch {
+    const panel = document.getElementById(ADDR_PANEL_ID);
+    if (panel) panel.style.display = 'none';
+  }
+}
+
+function attachToAdd1(el) {
+  if (el._srAddrAttached) return;
+  el._srAddrAttached = true;
+
+  const initial = el.textContent.trim();
+  if (initial && initial.length >= 5) {
+    addrDebounceTimer = setTimeout(() => handleAddressChange(initial), 1500);
+  }
+
+  const observer = new MutationObserver(() => {
+    const newAddr = el.textContent.trim();
+    clearTimeout(addrDebounceTimer);
+    addrDebounceTimer = setTimeout(() => handleAddressChange(newAddr), 800);
+  });
+  observer.observe(el, { childList: true, characterData: true, subtree: true });
+}
+
+function initAddressWatch() {
+  if (pendingAddrObserver) {
+    pendingAddrObserver.disconnect();
+    pendingAddrObserver = null;
+  }
+
+  const existing = document.getElementById('add1');
+  if (existing) { attachToAdd1(existing); return; }
+
+  const obs = new MutationObserver(() => {
+    const el = document.getElementById('add1');
+    if (el) {
+      obs.disconnect();
+      if (pendingAddrObserver === obs) pendingAddrObserver = null;
+      attachToAdd1(el);
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  pendingAddrObserver = obs;
   setTimeout(() => {
-    observer.disconnect();
-    if (pendingObserver === observer) pendingObserver = null;
+    obs.disconnect();
+    if (pendingAddrObserver === obs) pendingAddrObserver = null;
   }, 30000);
 }
 
@@ -365,7 +556,15 @@ window.addEventListener('hashchange', () => {
   attachedInput = null;
   lastQueried = '';
   lastData = null;
+  lastAddrQueried = '';
+  clearTimeout(addrDebounceTimer);
+  if (pendingAddrObserver) {
+    pendingAddrObserver.disconnect();
+    pendingAddrObserver = null;
+  }
   hidePanel();
+  const addrPanel = document.getElementById(ADDR_PANEL_ID);
+  if (addrPanel) addrPanel.style.display = 'none';
   clearTimeout(initTimer);
   initTimer = setTimeout(init, 300); // SPA 렌더링 대기
 });
