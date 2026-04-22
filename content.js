@@ -9,6 +9,13 @@ let debounceTimer = null;
 let lastQueried = '';
 let lastData = null; // 마지막 조회 결과 캐시
 
+// 서버 URL 캐시 (스토리지에서 로드, 웹앱 링크 생성용)
+let cachedServerUrl = '';
+chrome.storage.sync.get(['serverUrl'], (d) => { cachedServerUrl = d.serverUrl || ''; });
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.serverUrl) cachedServerUrl = changes.serverUrl.newValue || '';
+});
+
 // --- API 조회 (background service worker 경유 — Mixed Content 우회) ---
 
 function fetchVehicleReports(vehicleNumber) {
@@ -192,8 +199,8 @@ function buildRow(r) {
   const { text, cls } = stateLabel(r.처리상태);
   const fine = r.범칙금_과태료 ? `<span class="sr-fine-tag">${esc(r.범칙금_과태료)}</span>` : '';
   const place = r.위반장소 || r.위반법규 || '';
-  const detailUrl = r.ID
-    ? `https://www.safetyreport.go.kr/#mypage/mysafereport/${esc(String(r.ID))}`
+  const detailUrl = r.신고번호 && cachedServerUrl
+    ? `${cachedServerUrl.replace(/\/$/, '')}/data/all?open=${encodeURIComponent(r.신고번호)}`
     : '';
 
   const meta = [
@@ -406,6 +413,10 @@ function showAddrResults(address, data) {
   const panel = buildAddrPanel();
   const records = data.data || [];
 
+  const copyBtn = records.length > 0
+    ? `<button class="sr-copy-btn" id="sr-addr-copy-btn">신고번호 복사</button>`
+    : '';
+
   panel.style.display = 'flex';
   panel.innerHTML = `
     <div class="sr-addr-header">
@@ -413,7 +424,10 @@ function showAddrResults(address, data) {
         <span class="sr-addr-title" title="${esc(address)}">${esc(address)}</span>
         <span class="sr-count">${records.length}건</span>
       </div>
-      <button class="sr-close" id="sr-addr-close-btn">&#x2715;</button>
+      <div class="sr-header-actions">
+        ${copyBtn}
+        <button class="sr-close" id="sr-addr-close-btn">&#x2715;</button>
+      </div>
     </div>
     <div class="sr-addr-stats-wrap">
       ${buildAddrStats(records)}
@@ -429,6 +443,18 @@ function showAddrResults(address, data) {
     e.stopPropagation();
     panel.style.display = 'none';
   });
+
+  const copyBtnEl = panel.querySelector('#sr-addr-copy-btn');
+  if (copyBtnEl) {
+    copyBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const numbers = records.map((r) => r.신고번호).filter(Boolean).join('\n');
+      navigator.clipboard.writeText(numbers).then(() => {
+        copyBtnEl.textContent = '복사됨!';
+        setTimeout(() => { copyBtnEl.textContent = '신고번호 복사'; }, 1500);
+      });
+    });
+  }
 
   panel.querySelector('.sr-list')?.addEventListener('click', (e) => {
     const row = e.target.closest('.sr-row-link');
@@ -449,42 +475,67 @@ function buildAddrStats(records) {
   records.forEach((r) => {
     const s = r.처리상태 || '';
     const fp = r.범칙금_과태료 || '';
-    if (['처리중', '진행', '진행중'].includes(s)) st.처리중++;
+    const isProcessing = ['처리중', '진행', '진행중'].includes(s);
+    const isReject = ['불수용', '기타'].includes(s);
+
+    if (isProcessing) st.처리중++;
     else if (s === '수용') st.수용++;
     else if (s === '일부수용') st.일부수용++;
-    else if (['불수용', '기타'].includes(s)) st.불수용++;
+    else if (isReject) st.불수용++;
+
     if (fp.includes('과태료')) ft.과태료++;
     else if (fp.includes('범칙금') || fp.includes('경고')) ft.범칙금++;
+
     const officer = r.담당자;
     if (officer && officer !== '미지정' && officer !== '') {
-      officers[officer] = (officers[officer] || 0) + 1;
+      if (!officers[officer]) {
+        officers[officer] = { total: 0, 처리중: 0, 수용: 0, 일부수용: 0, 불수용: 0, 과태료: 0, 범칙금: 0 };
+      }
+      const o = officers[officer];
+      o.total++;
+      if (isProcessing) o.처리중++;
+      else if (s === '수용') o.수용++;
+      else if (s === '일부수용') o.일부수용++;
+      else if (isReject) o.불수용++;
+      if (fp.includes('과태료')) o.과태료++;
+      else if (fp.includes('범칙금') || fp.includes('경고')) o.범칙금++;
     }
   });
 
-  const pct = (n) => total > 0 ? Math.round(n / total * 100) : 0;
+  const pct = (n, base) => base > 0 ? Math.round(n / base * 100) : 0;
 
   const statusItems = [
-    st.처리중 ? `<span class="sr-sum-item sr-state-processing">처리중 ${st.처리중} <small>(${pct(st.처리중)}%)</small></span>` : '',
-    st.수용    ? `<span class="sr-sum-item sr-state-accept">수용 ${st.수용} <small>(${pct(st.수용)}%)</small></span>` : '',
-    st.일부수용 ? `<span class="sr-sum-item sr-state-partial">일부수용 ${st.일부수용} <small>(${pct(st.일부수용)}%)</small></span>` : '',
-    st.불수용  ? `<span class="sr-sum-item sr-state-reject">불수용 ${st.불수용} <small>(${pct(st.불수용)}%)</small></span>` : '',
+    st.처리중  ? `<span class="sr-sum-item sr-state-processing">처리중 ${st.처리중} <small>(${pct(st.처리중, total)}%)</small></span>` : '',
+    st.수용    ? `<span class="sr-sum-item sr-state-accept">수용 ${st.수용} <small>(${pct(st.수용, total)}%)</small></span>` : '',
+    st.일부수용 ? `<span class="sr-sum-item sr-state-partial">일부수용 ${st.일부수용} <small>(${pct(st.일부수용, total)}%)</small></span>` : '',
+    st.불수용  ? `<span class="sr-sum-item sr-state-reject">불수용 ${st.불수용} <small>(${pct(st.불수용, total)}%)</small></span>` : '',
   ].filter(Boolean).join('');
 
   const fineItems = [
-    ft.과태료  ? `<span class="sr-sum-item sr-fine-fine">과태료 ${ft.과태료} <small>(${pct(ft.과태료)}%)</small></span>` : '',
-    ft.범칙금  ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${ft.범칙금} <small>(${pct(ft.범칙금)}%)</small></span>` : '',
+    ft.과태료 ? `<span class="sr-sum-item sr-fine-fine">과태료 ${ft.과태료} <small>(${pct(ft.과태료, total)}%)</small></span>` : '',
+    ft.범칙금 ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${ft.범칙금} <small>(${pct(ft.범칙금, total)}%)</small></span>` : '',
   ].filter(Boolean).join('');
 
-  const topOfficers = Object.entries(officers).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const officerRows = topOfficers.map(([name, cnt]) => `
-    <div class="sr-addr-officer-row">
-      <span class="sr-addr-officer-name">${esc(name)}</span>
-      <span class="sr-addr-officer-bar-wrap">
-        <span class="sr-addr-officer-bar" style="width:${pct(cnt)}%"></span>
-      </span>
-      <span class="sr-addr-officer-cnt">${cnt}건</span>
-    </div>
-  `).join('');
+  const topOfficers = Object.entries(officers).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
+  const officerRows = topOfficers.map(([name, o]) => {
+    const badges = [
+      o.처리중  ? `<span class="sr-sum-item sr-state-processing">처리중 ${o.처리중}<small>(${pct(o.처리중, o.total)}%)</small></span>` : '',
+      o.수용    ? `<span class="sr-sum-item sr-state-accept">수용 ${o.수용}<small>(${pct(o.수용, o.total)}%)</small></span>` : '',
+      o.일부수용 ? `<span class="sr-sum-item sr-state-partial">일부수용 ${o.일부수용}<small>(${pct(o.일부수용, o.total)}%)</small></span>` : '',
+      o.불수용  ? `<span class="sr-sum-item sr-state-reject">불수용 ${o.불수용}<small>(${pct(o.불수용, o.total)}%)</small></span>` : '',
+      o.과태료  ? `<span class="sr-sum-item sr-fine-fine">과태료 ${o.과태료}</span>` : '',
+      o.범칙금  ? `<span class="sr-sum-item sr-fine-penalty">경고/범칙금 ${o.범칙금}</span>` : '',
+    ].filter(Boolean).join('');
+    return `
+      <div class="sr-addr-officer-row">
+        <div class="sr-addr-officer-top">
+          <span class="sr-addr-officer-name">${esc(name)}</span>
+          <span class="sr-addr-officer-total">${o.total}건</span>
+        </div>
+        <div class="sr-addr-officer-badges">${badges}</div>
+      </div>
+    `;
+  }).join('');
 
   return `
     ${statusItems ? `<div class="sr-addr-stat-section"><div class="sr-addr-stat-label">처리상태</div><div class="sr-addr-stat-row">${statusItems}</div></div>` : ''}
