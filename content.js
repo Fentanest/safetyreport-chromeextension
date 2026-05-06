@@ -8,6 +8,8 @@ const DEBOUNCE_MS = 600;
 let debounceTimer = null;
 let lastQueried = '';
 let lastData = null; // 마지막 조회 결과 캐시
+let vehicleRequestSeq = 0;
+let vehicleInFlightValue = '';
 
 // 서버 URL 캐시 (스토리지에서 로드, 웹앱 링크 생성용)
 let cachedServerUrl = '';
@@ -35,6 +37,20 @@ function fetchVehicleReports(vehicleNumber) {
       }
     );
   });
+}
+
+function normalizeVehicleValue(raw) {
+  return raw.trim().replace(/\s/g, '');
+}
+
+function scheduleVehicleFetch(inputEl, { force = false } = {}) {
+  clearTimeout(debounceTimer);
+  const value = normalizeVehicleValue(inputEl.value);
+  if (value.length < 4) return;
+  if (lastData && lastData.value === value) return;
+  if (vehicleInFlightValue === value) return;
+  if (force) lastQueried = '';
+  debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
 }
 
 // --- 패널 렌더링 ---
@@ -244,27 +260,37 @@ function hidePanel() {
 // --- 입력 처리 ---
 
 async function handleVehicleInput(inputEl) {
-  const value = inputEl.value.trim().replace(/\s/g, '');
+  const value = normalizeVehicleValue(inputEl.value);
 
   if (value.length < 4) {
     hidePanel();
     return;
   }
 
+  if (vehicleInFlightValue === value) return;
   if (value === lastQueried) return;
+
+  const requestSeq = ++vehicleRequestSeq;
   lastQueried = value;
+  vehicleInFlightValue = value;
 
   showLoading(inputEl);
 
   try {
     const data = await fetchVehicleReports(value);
+    if (requestSeq !== vehicleRequestSeq) return;
     lastData = { value, data };
     showResults(inputEl, value, data);
   } catch (err) {
+    if (requestSeq !== vehicleRequestSeq) return;
     if (err.message === 'NO_CONFIG') {
       showNoConfig(inputEl);
     } else {
       showError(inputEl, err.message);
+    }
+  } finally {
+    if (requestSeq === vehicleRequestSeq && vehicleInFlightValue === value) {
+      vehicleInFlightValue = '';
     }
   }
 }
@@ -280,15 +306,12 @@ function attachToInput(inputEl) {
 
   // 텍스트 변경 시
   inputEl.addEventListener('input', () => {
-    clearTimeout(debounceTimer);
-    lastQueried = ''; // 강제 재조회 허용
-    debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
+    scheduleVehicleFetch(inputEl, { force: true });
   });
 
   // 포커스 진입 또는 클릭 시 — 캐시된 결과 즉시 표시, 없으면 재조회
   const showOnActivate = () => {
-    clearTimeout(debounceTimer);
-    const value = inputEl.value.trim().replace(/\s/g, '');
+    const value = normalizeVehicleValue(inputEl.value);
     if (value.length < 4) return;
 
     if (lastData && lastData.value === value) {
@@ -296,8 +319,8 @@ function attachToInput(inputEl) {
       return;
     }
 
-    lastQueried = '';
-    debounceTimer = setTimeout(() => handleVehicleInput(inputEl), DEBOUNCE_MS);
+    if (vehicleInFlightValue === value) return;
+    scheduleVehicleFetch(inputEl, { force: true });
   };
   inputEl.addEventListener('focus', showOnActivate);
   inputEl.addEventListener('click', showOnActivate);
@@ -374,6 +397,9 @@ const ADDR_PANEL_ID = 'sr-address-panel';
 let addrDebounceTimer = null;
 let lastAddrQueried = '';
 let pendingAddrObserver = null;
+let lastAddrData = null;
+let addrRequestSeq = 0;
+let addrInFlightValue = '';
 
 function fetchAddressReports(address) {
   return new Promise((resolve, reject) => {
@@ -574,16 +600,29 @@ function buildAddrStats(records) {
 async function handleAddressChange(address) {
   address = address.trim();
   if (!address || address.length < 5) return;
-  if (address === lastAddrQueried) return;
+  if (lastAddrData && lastAddrData.value === address) {
+    showAddrResults(address, lastAddrData.data);
+    return;
+  }
+  if (address === addrInFlightValue) return;
+  const requestSeq = ++addrRequestSeq;
   lastAddrQueried = address;
+  addrInFlightValue = address;
 
   showAddrLoading();
   try {
     const data = await fetchAddressReports(address);
+    if (requestSeq !== addrRequestSeq) return;
+    lastAddrData = { value: address, data };
     showAddrResults(address, data);
   } catch {
+    if (requestSeq !== addrRequestSeq) return;
     const panel = document.getElementById(ADDR_PANEL_ID);
     if (panel) panel.style.display = 'none';
+  } finally {
+    if (requestSeq === addrRequestSeq && addrInFlightValue === address) {
+      addrInFlightValue = '';
+    }
   }
 }
 
@@ -592,13 +631,15 @@ function attachToAdd1(el) {
   el._srAddrAttached = true;
 
   const initial = el.textContent.trim();
-  if (initial && initial.length >= 5) {
+  if (initial && initial.length >= 5 && initial !== lastAddrQueried && initial !== addrInFlightValue) {
     addrDebounceTimer = setTimeout(() => handleAddressChange(initial), 1500);
   }
 
   const observer = new MutationObserver(() => {
     const newAddr = el.textContent.trim();
     clearTimeout(addrDebounceTimer);
+    if (!newAddr || newAddr.length < 5) return;
+    if (newAddr === lastAddrQueried || newAddr === addrInFlightValue) return;
     addrDebounceTimer = setTimeout(() => handleAddressChange(newAddr), 800);
   });
   observer.observe(el, { childList: true, characterData: true, subtree: true });
@@ -634,7 +675,12 @@ window.addEventListener('hashchange', () => {
   attachedInput = null;
   lastQueried = '';
   lastData = null;
+  vehicleRequestSeq += 1;
+  vehicleInFlightValue = '';
   lastAddrQueried = '';
+  lastAddrData = null;
+  addrRequestSeq += 1;
+  addrInFlightValue = '';
   clearTimeout(addrDebounceTimer);
   if (pendingAddrObserver) {
     pendingAddrObserver.disconnect();

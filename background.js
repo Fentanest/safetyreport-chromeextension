@@ -1,6 +1,7 @@
 'use strict';
 
 const ALARM_NAME = 'safetyreport_poll';
+const inflightContentRequests = new Map();
 
 // --- 설정 로드 ---
 
@@ -157,6 +158,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         ? `${base}/api/v1/vehicle/${encodeURIComponent(msg.vehicleNumber)}`
         : `${base}/api/v1/address?q=${encodeURIComponent(msg.address)}`;
       const headers = { 'X-API-Key': apiKey };
+      const requestKey = `${msg.type}:${url}`;
 
       const tryFetch = () => fetch(url, { headers })
         .then((res) => {
@@ -164,24 +166,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return res.json();
         });
 
-      // 5xx(특히 502)는 최대 3회 재시도, 딜레이 2→4→6초
-      const MAX_RETRIES = 3;
-      let lastErr;
-      for (let i = 0; i <= MAX_RETRIES; i++) {
-        try {
-          const data = await tryFetch();
-          sendResponse({ data });
-          return;
-        } catch (err) {
-          lastErr = err;
-          if (i < MAX_RETRIES && /HTTP 5\d\d/.test(err.message)) {
-            await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
-          } else {
-            break;
+      let requestPromise = inflightContentRequests.get(requestKey);
+      if (!requestPromise) {
+        requestPromise = (async () => {
+          // 5xx(특히 502)는 최대 3회 재시도, 딜레이 2→4→6초
+          const MAX_RETRIES = 3;
+          let lastErr;
+          for (let i = 0; i <= MAX_RETRIES; i++) {
+            try {
+              return await tryFetch();
+            } catch (err) {
+              lastErr = err;
+              if (i < MAX_RETRIES && /HTTP 5\d\d/.test(err.message)) {
+                await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+              } else {
+                break;
+              }
+            }
           }
-        }
+          throw lastErr;
+        })().finally(() => {
+          inflightContentRequests.delete(requestKey);
+        });
+        inflightContentRequests.set(requestKey, requestPromise);
       }
-      sendResponse({ error: lastErr.message });
+
+      try {
+        const data = await requestPromise;
+        sendResponse({ data });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
     });
     return true;
   }
