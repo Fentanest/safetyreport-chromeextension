@@ -59,6 +59,41 @@ async function setWasCrawling(value) {
   });
 }
 
+function formatDoneChangeLine(change) {
+  if ((change.notification_kind || 'report') === 'duplicate') {
+    const statusLabel = change.status_label || '중복 신고 변경';
+    const changeTypeMap = {
+      group_added: '신규 중복군',
+      members_changed: '멤버 변경',
+      representative_changed: '대표건 변경',
+    };
+    const changeType = changeTypeMap[change.duplicate_change_type] || '중복 변경';
+    const memberCount = Number(change.member_count || 0);
+    const rep = change.representative_report_number
+      ? `대표 ${change.representative_report_number}`
+      : '';
+    return [`[중복] ${changeType}`, statusLabel, memberCount ? `${memberCount}건` : '', rep]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  const num = change.신고번호 ? `[${change.신고번호}]` : '';
+  const name = change.신고명 || '(제목 없음)';
+  return `${num} ${name}`.trim();
+}
+
+function buildDoneNotificationTitle(changedCount, changes) {
+  const duplicateCount = changes.filter((change) => (change.notification_kind || 'report') === 'duplicate').length;
+  const reportCount = changes.length - duplicateCount;
+  if (duplicateCount > 0 && reportCount === 0) {
+    return `크롤링 완료 (중복 ${duplicateCount}건)`;
+  }
+  if (duplicateCount > 0) {
+    return `크롤링 완료 (신고 ${reportCount}건, 중복 ${duplicateCount}건)`;
+  }
+  return `크롤링 완료${changedCount > 0 ? ` (${changedCount}건)` : ''}`;
+}
+
 async function pollCrawlStatus() {
   const { serverUrl, apiKey, notifyCrawlDone } = await getConfig();
   if (!serverUrl || !apiKey) return;
@@ -89,11 +124,7 @@ async function pollCrawlStatus() {
         message = changed > 0 ? `${changed}건이 업데이트되었습니다.` : '크롤링이 완료되었습니다.';
       } else {
         const MAX = 3;
-        const lines = changes.slice(0, MAX).map((c) => {
-          const num = c.신고번호 ? `[${c.신고번호}]` : '';
-          const name = c.신고명 || '(제목 없음)';
-          return `${num} ${name}`.trim();
-        });
+        const lines = changes.slice(0, MAX).map(formatDoneChangeLine);
         if (changes.length > MAX) lines.push(`외 ${changes.length - MAX}건`);
         message = lines.join('\n');
       }
@@ -101,7 +132,7 @@ async function pollCrawlStatus() {
       chrome.notifications.create(`crawl_done_${Date.now()}`, {
         type: 'basic',
         iconUrl: 'icons/icon48.png',
-        title: `크롤링 완료${changed > 0 ? ` (${changed}건)` : ''}`,
+        title: buildDoneNotificationTitle(changed, changes),
         message,
         priority: 1,
       });

@@ -96,6 +96,9 @@ safetyreport-chromeextension/
 
 - 확장은 현재 REST API만 사용한다.
 - 서버의 "연결 중인 기기"에서 WebSocket 클라이언트로 보이지 않는 것은 정상이다.
+- `/api/v1/crawl/done/ext` 의 `changes` 배열은 두 종류를 가질 수 있다.
+  - `notification_kind: "report"`: 일반 신고 변경
+  - `notification_kind: "duplicate"`: 중복 신고 그룹 변경
 
 ---
 
@@ -121,6 +124,7 @@ safetyreport-chromeextension/
 - `chrome.alarms` 로 주기적 `crawl/status` 폴링
 - `wasCrawling -> !running` 전환 감지 시 `/api/v1/crawl/done/ext` 로 완료 알림 생성
 - 콘텐츠 스크립트의 `FETCH_VEHICLE`, `FETCH_ADDRESS` 메시지를 받아 서버 fetch 수행
+- 완료 알림은 `report` 변경과 `duplicate` 변경을 구분해서 문구를 만든다.
 
 ### 중복 요청 억제
 
