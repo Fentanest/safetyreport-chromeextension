@@ -49,25 +49,7 @@
 - 이 수정은 확장 쪽 중복 호출과 UI race를 줄이는 1차 대응이다.
 - 서버 `/api/v1/vehicle`, `/api/v1/address` 는 여전히 부분일치 전체 스캔 성격이라,
   DB가 커지면 서버 최적화가 추가로 필요할 수 있다.
-
-### Python 3.14 회귀 확인 + 리팩토링 검증
-
-상태: 완료
-
-변경:
-- 서버 레포(`/home/better0101/projects/safetyreport`)에 `python3.14` 기반 `.venv314` 생성
-- `requirements.txt` 설치 후 저장된 fixture 기준 회귀 확인
-
-검증:
-- 현재 `services/parser.py` 와 리팩토링 직전(`e2d0f1e^`) 파서를 비교
-  - `testresults/*_api_raw.json`
-  - `testresults/*_legacy_raw.html`
-  기준으로 API/legacy 모두 동일 결과 확인
-- 만족도 보강은 조회 실패와 확정 미참여를 구분하는 분기까지 별도 확인
-
-비고:
-- 서버의 실제 운영 DB(`data/data.db`) 는 현재 로컬 환경에서 `database disk image is malformed` 가 떠서
-  검색 성능 실측은 못 했고, 익스텐션 이슈 분석은 서버 로그 + 쿼리 구조 + 클라이언트 호출 패턴 기준으로 진행
+- 서버 파서 회귀 확인과 fixture 검증은 `safetyreport` 레포 CHANGELOG에 기록한다.
 
 ### 문서 역할 분리
 
