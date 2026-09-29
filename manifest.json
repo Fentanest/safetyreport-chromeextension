@@ -1,16 +1,12 @@
 {
   "manifest_version": 3,
   "name": "나만의 안전신문고",
-  "version": "1.0.2.1",
-  "description": "safetyreport 서버에 연결해 신고 현황 확인 및 크롤링 제어",
+  "version": "1.1.0",
+  "description": "카카오 계정으로 본인이 공유한 완료 신고 조회",
   "permissions": [
     "storage",
-    "notifications",
-    "alarms",
+    "identity",
     "clipboardWrite"
-  ],
-  "optional_host_permissions": [
-    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -25,15 +21,14 @@
     "open_in_tab": false
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "build/background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.safetyreport.go.kr/*",
-        "http://www.safetyreport.go.kr/*"
-      ],
+      "matches": ["https://www.safetyreport.go.kr/*"],
       "js": [
+        "shared-ui.js",
         "content.js"
       ],
       "css": [
@@ -42,6 +37,10 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [{
+    "resources": ["ui-tokens.css", "ui-components.css"],
+    "matches": ["https://www.safetyreport.go.kr/*"]
+  }],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
