@@ -47,6 +47,7 @@
       const action = event.target.closest('button')?.dataset.action;
       if (action === 'close') hide(kind,true);
       if (action === 'more') loadMore(kind);
+      if (action === 'more-managers') loadMoreManagers(kind);
       if (action === 'copy') copyNumbers(kind);
       if (action === 'cancel-copy') states[kind].cancelCopy = true;
     });
@@ -95,59 +96,87 @@
   function show(kind) {
     states[kind].open = true; states[kind].dismissed = false; panel(kind); refreshVisibility();
   }
+  // s.data = { summary, reports: ReportPage (items accumulated), managers: ManagerPage (items accumulated) } — my-reports-v1
   function render(kind,message='') {
     const s = states[kind], p = panel(kind), data = s.data;
     const heading = kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고';
-    p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title">${heading}<span class="sr-plain-count">${data ? `${SRUI.count(data.total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.esc(s.query)}</p></div><div class="sr-header-actions">${data && Number(data.total)>Number(data.missing_numbers||0) ? '<button class="sr-button" data-action="copy">신고번호 복사</button>' : ''}<button class="sr-icon-button" data-action="close" aria-label="닫기">✕</button></div></header><div class="sr-panel-content">${data ? `${SRUI.summary(data)}${kind==='address'?SRUI.managers(data,s.managerOpen):''}${SRUI.records(data)}${data.next_offset!==null?'<button class="sr-button sr-more" data-action="more">신고 더 보기</button>':''}` : `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':'내 계정으로 공유한 완료 신고'}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
+    const total = Number(data?.summary?.total || 0), missing = Number(data?.summary?.report_number_missing || 0);
+    p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title">${heading}<span class="sr-plain-count">${data ? `${SRUI.count(total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.esc(s.query)}</p></div><div class="sr-header-actions">${data && total>missing ? '<button class="sr-button" data-action="copy">신고번호 복사</button>' : ''}<button class="sr-icon-button" data-action="close" aria-label="닫기">✕</button></div></header><div class="sr-panel-content">${data ? `${SRUI.summary(data.summary)}${kind==='address'?SRUI.managers(data.managers,s.managerOpen):''}${SRUI.records(data.reports)}${data.reports?.next_cursor?'<button class="sr-button sr-more" data-action="more">신고 더 보기</button>':''}` : `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':'내 계정으로 공유한 완료 신고'}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
   }
-  async function search(kind) {
+  const failureText = code => code==='AUTH_REQUIRED'?'확장 아이콘에서 카카오 로그인 후 조회해 주세요.':
+    code==='ACCESS_DENIED'?'이 계정의 공유 동의 또는 접근 상태를 확인해 주세요.':
+    code==='NOT_CONFIGURED'?'확장 연결 설정이 필요합니다.':
+    code==='RATE_LIMITED'?'요청이 많습니다. 잠시 후 입력칸을 다시 눌러 주세요.':
+    code==='UNAVAILABLE'?'서버가 잠시 응답하지 않습니다. 잠시 후 다시 시도해 주세요.':'조회 실패. 입력칸을 다시 누르면 재시도합니다.';
+  async function search(kind,retried=false) {
     const s=states[kind], query=s.query, generation=s.generation;
     if (!s.open || s.dismissed || !query) return;
     render(kind);
     try {
-      const result=await send({type:'SEARCH',kind,query,offset:0});
+      const result=await send({type:'SEARCH',kind,query,fresh:retried});
       if (generation!==s.generation || query!==s.query || !s.open || s.dismissed || !s.node?.isConnected) return;
-      s.data=result; render(kind);
+      s.data={summary:result.summary,reports:result.reports,managers:result.managers}; render(kind);
     } catch(error) {
       if (generation!==s.generation || !s.open) return;
-      render(kind,error.message==='AUTH_REQUIRED'?'확장 아이콘에서 카카오 로그인 후 조회해 주세요.':
-        error.message==='ACCESS_DENIED'?'이 계정의 공유 동의 또는 접근 상태를 확인해 주세요.':
-        error.message==='NOT_CONFIGURED'?'확장 연결 설정이 필요합니다.':'조회 실패. 입력칸을 다시 누르면 재시도합니다.');
+      if (error.message==='DATASET_CHANGED' && !retried) return search(kind,true);
+      render(kind,failureText(error.message));
     }
   }
+  // the next page of the same search; a data change restarts from page 1 (the server refuses a stale cursor)
   async function loadMore(kind) {
     const s=states[kind], data=s.data;
-    if (!data || data.next_offset===null) return;
+    if (!data?.reports?.next_cursor) return;
     const generation=s.generation;
     try {
-      const next=await send({type:'SEARCH',kind,query:s.query,offset:data.next_offset,expectedVersion:data.version});
+      const next=await send({type:'SEARCH',kind,query:s.query,cursor:data.reports.next_cursor});
       if (generation!==s.generation || !s.open) return;
-      s.data={...data,items:[...data.items,...next.items],next_offset:next.next_offset}; render(kind);
-    } catch { if (generation===s.generation) { s.data=null; render(kind,'목록을 이어서 불러오지 못했습니다. 다시 조회해 주세요.'); } }
+      s.data={...data,reports:{...next.reports,items:[...data.reports.items,...next.reports.items]}}; render(kind);
+    } catch(error) {
+      if (generation!==s.generation) return;
+      if (error.message==='DATASET_CHANGED') { s.data=null; s.generation++; return search(kind,true); }
+      s.data=null; render(kind,'목록을 이어서 불러오지 못했습니다. 다시 조회해 주세요.');
+    }
   }
+  async function loadMoreManagers(kind) {
+    const s=states[kind], data=s.data;
+    if (!data?.managers?.next_cursor) return;
+    const generation=s.generation;
+    try {
+      const next=await send({type:'SEARCH',kind,query:s.query,part:'managers',cursor:data.managers.next_cursor});
+      if (generation!==s.generation || !s.open) return;
+      s.managerOpen=true;
+      s.data={...data,managers:{...next.managers,items:[...data.managers.items,...next.managers.items]}}; render(kind);
+    } catch(error) {
+      if (generation!==s.generation) return;
+      if (error.message==='DATASET_CHANGED') { s.data=null; s.generation++; return search(kind,true); }
+      render(kind,'담당자 목록을 이어서 불러오지 못했습니다. 다시 조회해 주세요.');
+    }
+  }
+  // every page of /numbers (500 per page) before the clipboard; any change or cancel copies nothing
   async function copyNumbers(kind) {
     const s=states[kind]; if (s.copying || !s.data) return;
-    const version=s.data.version, count=Number(s.data.total)-Number(s.data.missing_numbers||0);
-    if (count<=0) return;
-    if (count>5000) { const b=panels[kind].root.querySelector('[data-action="copy"]'); if(b)b.textContent='5,000건 초과 · 복사 불가'; return; }
     const generation=s.generation, query=s.query;
-    s.copying=true; s.cancelCopy=false; render(kind);
+    s.copying=true; s.cancelCopy=false; s.copyResult=''; render(kind);
     try {
-      const numbers=[]; let offset=0;
+      const numbers=[]; let cursor=null, expected=null, missing=0, seen=new Set();
       do {
         if (s.cancelCopy || generation!==s.generation) throw new Error('CANCELLED');
-        const page=await send({type:'NUMBERS',kind,query,offset,expectedVersion:version});
-        if (page.version!==version) throw new Error('DATASET_CHANGED');
-        if (page.next_offset!==null && (!Number.isInteger(page.next_offset) || page.next_offset<=offset))
-          throw new Error('INVALID_PAGE');
-        numbers.push(...page.items.map(item=>item.report_number).filter(Boolean));
-        if (numbers.length>count) throw new Error('INVALID_PAGE');
-        offset=page.next_offset;
-      } while(offset!==null);
-      if (numbers.length!==count || s.cancelCopy || generation!==s.generation) throw new Error('DATASET_CHANGED');
+        const page=await send({type:'NUMBERS',kind,query,cursor});
+        if (expected===null) { expected=page.unique_numbers; missing=page.without_number; }
+        if (page.unique_numbers!==expected || !Array.isArray(page.items)) throw new Error('DATASET_CHANGED');
+        for (const n of page.items) { if (seen.has(n)) throw new Error('INVALID_PAGE'); seen.add(n); numbers.push(n); }
+        if (numbers.length>expected) throw new Error('INVALID_PAGE');
+        cursor=page.next_cursor;
+        if (cursor===null && !page.complete) throw new Error('INVALID_PAGE');
+      } while(cursor!==null);
+      if (numbers.length!==expected || s.cancelCopy || generation!==s.generation) throw new Error('DATASET_CHANGED');
       await navigator.clipboard.writeText(numbers.join('\n'));
-      s.copyResult=`복사됨 · 번호 없는 ${s.data.missing_numbers||0}건 제외`;
-    } catch(error) { if(error.message!=='CANCELLED')s.copyResult='복사 실패 · 다시 시도'; }
+      s.copyResult=missing?`${SRUI.count(numbers.length)}건 복사됨 · 번호 없는 ${SRUI.count(missing)}건 제외`:`${SRUI.count(numbers.length)}건 복사됨`;
+    } catch(error) {
+      if(error.message==='NUMBERS_LIMIT_EXCEEDED')s.copyResult='한 번에 복사할 수 없는 양입니다';
+      else if(error.message==='DATASET_CHANGED')s.copyResult='자료가 바뀌었습니다 · 다시 시도';
+      else if(error.message!=='CANCELLED')s.copyResult='복사 실패 · 다시 시도';
+    }
     finally { s.copying=false; if(generation===s.generation) { render(kind); const b=panels[kind].root.querySelector('[data-action="copy"]'); if(b&&s.copyResult)b.textContent=s.copyResult; } }
   }
   function vehicleChanged(reopen=false) {
