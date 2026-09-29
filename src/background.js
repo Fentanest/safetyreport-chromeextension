@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { buildRequest, classifyError, retryAfterSeconds } from './myReportsClient.js';
 
 const SUPABASE_URL = __SUPABASE_URL__;
 const PUBLISHABLE_KEY = __SUPABASE_KEY__;
@@ -10,6 +11,7 @@ const activeControllers = new Set();
 let generation = 0;
 let loginFlight = null;
 let refreshFlight = null;
+let blockedUntil = 0;
 let client;
 
 const storage = {
@@ -108,56 +110,43 @@ async function logout() {
   return { signedIn: false };
 }
 
-function validRequest(mode, msg) {
-  const offset = msg.offset ?? 0;
-  if (!Number.isInteger(offset) || offset < 0 || offset > 5000) throw new Error('INVALID_QUERY');
-  const version = msg.expectedVersion ?? null;
-  if (version !== null && (typeof version !== 'string' || !/^[0-9a-f]{32}$/.test(version))) throw new Error('INVALID_QUERY');
-  if (mode === 'summary') return { mode, body: { offset, limit: 20,
-    ...(version ? { expected_version: version } : {}) } };
-  const kind = msg.kind;
-  if (kind !== 'vehicle' && kind !== 'address') throw new Error('INVALID_QUERY');
-  if (typeof msg.query !== 'string') throw new Error('INVALID_QUERY');
-  const query = kind === 'vehicle' ? msg.query.normalize('NFC').replace(/\s/gu, '')
-    : msg.query.normalize('NFC').trim().replace(/\s+/gu, ' ');
-  const length = [...query].length;
-  if (kind === 'vehicle' ? length < 6 || length > 64 : length < 5 || length > 200) throw new Error('INVALID_QUERY');
-  return { mode, body: { kind, query, offset, limit: mode === 'numbers' ? 50 : 20,
-    ...(version ? { expected_version: version } : {}) } };
-}
-
 async function reports(mode, message) {
-  const { body } = validRequest(mode, message);
+  const { route, body } = buildRequest(mode, message);
+  if (Date.now() < blockedUntil) throw new Error('RATE_LIMITED');
   const session = await currentSession();
   const epoch = generation;
-  const key = JSON.stringify([epoch, session.user.id, mode, body]);
-  if (mode === 'summary' && message.fresh === true) cache.delete(key);
+  const key = JSON.stringify([epoch, session.user.id, route, body]);
+  if (message.fresh === true) cache.delete(key);
   const saved = cache.get(key);
   if (saved && Date.now() - saved.at < CACHE_TTL) return saved.value;
   if (inflight.has(key)) return inflight.get(key);
   const controller = new AbortController();
   activeControllers.add(controller);
   const request = (async () => {
-    const send = token => fetch(`${SUPABASE_URL}/functions/v1/my-reports/${mode}`, {
+    const send = token => fetch(`${SUPABASE_URL}/functions/v1/my-reports/${route}`, {
       method: 'POST', cache: 'no-store', signal: controller.signal,
       headers: { apikey: PUBLISHABLE_KEY, Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
+    const read = async response => { try { return await response.json(); } catch { return null; } };
     let response = await send(session.access_token);
-    if (response.status === 401) {
+    let payload = response.ok ? null : await read(response);
+    if (response.status === 401 && classifyError(401, payload).refresh) {
       refreshFlight ??= client.auth.refreshSession().finally(() => { refreshFlight = null; });
       const refreshed = await refreshFlight;
-      if (refreshed.error || !refreshed.data.session) throw new Error('AUTH_REQUIRED');
+      if (refreshed.error || !refreshed.data.session) { clearCache(); throw new Error('AUTH_REQUIRED'); }
       response = await send(refreshed.data.session.access_token);
+      payload = response.ok ? null : await read(response);
     }
     if (!response.ok) {
-      if (response.status === 401) { clearCache(); throw new Error('AUTH_REQUIRED'); }
-      if (response.status === 403) { clearCache(); throw new Error('ACCESS_DENIED'); }
-      if (response.status === 409) throw new Error('DATASET_CHANGED');
-      if (response.status === 429) throw new Error('RATE_LIMITED');
-      throw new Error('REQUEST_FAILED');
+      const failure = classifyError(response.status, payload);
+      if (failure.clear) clearCache();
+      else if (failure.restart) cache.clear();
+      if (failure.code === 'RATE_LIMITED') blockedUntil = Date.now() + retryAfterSeconds(response.headers.get('retry-after')) * 1000;
+      throw new Error(failure.code);
     }
-    const value = await response.json();
+    const value = await read(response);
+    if (!value || value.contract !== 'my-reports-v1' || value.route !== route) throw new Error('REQUEST_FAILED');
     if (generation !== epoch) throw new Error('STALE_SESSION');
     cache.set(key, { at: Date.now(), value });
     while (cache.size > 50) cache.delete(cache.keys().next().value);

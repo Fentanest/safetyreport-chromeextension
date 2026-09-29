@@ -8,7 +8,7 @@
 
 Node.js 22 이상에서 `npm ci && npm test && npm run build`. 실제 Chrome action popup 크기는 unpacked 확장을 지원하는 Chromium 경로를 `SR_CHROMIUM_PATH`에 지정해 `npm run test:action-popup`으로 확인한다. `build/`가 unpacked 확장 디렉터리다. 테스트용 기본 빌드는 인증 설정 없는 상태로 생성된다. 실제 연결 빌드는 기존 Supabase 프로젝트의 **공개** URL·publishable key를 환경변수 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`에 지정한 뒤 `npm run build`를 실행한다. service_role 키나 Kakao secret은 절대 넣지 않는다.
 
-`build/manifest.json`의 host permission은 주어진 Supabase origin 하나로 생성된다. 운영자에게는 map 저장소의 `docs/my-reports.md`에 있는 DB 마이그레이션, Edge 배포, Origin allowlist, Supabase Auth Redirect URL 추가 절차가 필요하다. 미배포 함수나 미등록 Redirect URL 상태에서는 로그인이 완료되어도 신고를 조회할 수 없다.
+`build/manifest.json`의 host permission은 주어진 Supabase origin 하나로 생성된다. 운영자에게는 map 저장소의 `docs/integration/chromeextension/REPORT.md` §6에 있는 DB 마이그레이션, Edge 배포, Origin allowlist, Supabase Auth Redirect URL 추가 절차가 필요하다. 미배포 함수나 미등록 Redirect URL 상태에서는 로그인이 완료되어도 신고를 조회할 수 없다.
 
 확장 ID가 정해진 뒤 `chrome.identity.getRedirectURL('supabase-auth')`로 얻은 정확한 URL을 기존 Supabase Auth Redirect URLs에 **추가**한다. 기존 PC·모바일·지도 Redirect URL을 지우지 않는다. 실제 Chrome 웹 스토어 ID와 unpacked 개발 ID가 다를 수 있다. Kakao 개발자 콘솔에는 기존 Supabase Auth callback을 유지한다.
 

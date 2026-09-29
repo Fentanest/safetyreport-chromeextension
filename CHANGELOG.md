@@ -7,6 +7,18 @@
 
 ---
 
+## 2026-09-30 · my-reports-v1 계약으로 전환
+
+- map 정본 계약 `contracts/my-reports/`(v1)를 사본으로 추가하고 MANIFEST 검사 테스트를 둔다.
+- offset/limit/expected_version 초안 대신 서명 커서(`next_cursor`)로 목록·담당자·최근 3일·번호 페이지를 넘긴다. 담당자는 100명 제한 없이 `담당자 더 보기`.
+- 번호 복사는 500개 페이지를 끝까지 모은 뒤에만 클립보드에 쓰고, 페이지 사이 자료 변경·불완전 목록·상한 초과는 복사하지 않는다.
+- 요약은 v1 중첩 필드(status/disposition/fine_amount)와 서버 `accept_rate`를 쓰고 확정 금액이 없으면 0원이 아니라 “확인된 금액 없음”으로 표시.
+- 원문 링크는 서버 `official_url`을 공식 접두사로 다시 확인해서만 사용. 팝업은 서버가 정한 최근 기간(`recent_start~recent_end`)을 표시.
+- 오류: 401 refresh 1회, 403 접근 불가, 409/`INVALID_CURSOR` 첫 페이지부터 1회 재조회, 429 `Retry-After` 동안 요청 중단, 비계약 응답은 실패로 처리.
+- 테스트 fixture를 계약 fixture(로컬 스택 실제 응답)로 교체. 운영 DB·Edge 배포와 실제 확장 설치 검증은 별도.
+
+---
+
 ## 2026-09-30 · 1.1.0 로컬 구현 후보
 
 - 서버 주소/API 키·크롤링 제어·주기 알림·처리중 배지를 제거하고 worker 소유 Kakao PKCE 로그인 및 본인 완료 신고 조회 API로 전환.
