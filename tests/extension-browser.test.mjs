@@ -217,3 +217,22 @@ test('popup: whole-scope summary, recent window label, more recent via cursor',a
     assert.equal(call.cursor,s.recent.next_cursor);
   }finally{await browser.close();}
 });
+
+test('options shows only the button that fits the account state (login xor logout)',async()=>{
+  const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
+  try{
+    for(const signedIn of [false,true]){
+      const page=await browser.newPage({viewport:{width:420,height:640}});
+      await page.addInitScript(({base,signedIn})=>{
+        window.chrome.runtime={getURL:n=>base+n,lastError:null,onMessage:{addListener(){}},
+          sendMessage:(m,r)=>r({data:m.type==='STATUS'?(signedIn?{signedIn:true,name:'시험 사용자'}:{signedIn:false}):{}})};
+        window.chrome.storage={sync:{get:(_k,cb)=>cb({theme:'light'}),set:async()=>{}},onChanged:{addListener(){}}};
+      },{base:`${url('')}/`,signedIn});
+      await page.goto(url('options.html'));
+      await page.waitForFunction(()=>document.getElementById('status').textContent!=='계정 확인 중…');
+      assert.equal(await page.locator('#login').isVisible(),!signedIn,`login visible, signedIn=${signedIn}`);
+      assert.equal(await page.locator('#logout').isVisible(),signedIn,`logout visible, signedIn=${signedIn}`);
+      await page.close();
+    }
+  }finally{await browser.close();}
+});
