@@ -1,3 +1,5 @@
+/* `hidden` always wins over component display rules (options login/logout, panels) */
+[hidden]{display:none!important}
 /* Extension component seed. Place injected panels INSIDE a ShadowRoot.
    Root popup geometry/lifecycle/network logic must be implemented separately.
    No global website selectors: all classes are contained by .sr-ui. */
