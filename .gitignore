@@ -1,0 +1,7 @@
+node_modules/
+build/
+artifacts/
+.review-*
+safetyreport-chromeextension-sol-*.zip
+*.env
+!*.env.example

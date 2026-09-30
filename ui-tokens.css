@@ -1,0 +1,91 @@
+/* Source: safetyreport/dev/web/static/ui/tokens.css (e19370d5).
+ * State tone derivation: mobile SrColors.StatusTone (0d8edd7c).
+ * Extension-local variables only. No font binary / remote dependency.
+ * See token-provenance.json. Production panels use a ShadowRoot.
+ */
+:root, :host {
+  --sr-font: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  --sr-bg: #eef3f9;
+  --sr-surface: #ffffff;
+  --sr-surface-2: #f5f8fc;
+  --sr-surface-3: #e9f0f9;
+  --sr-border: #dbe3ee;
+  --sr-text: #15213b;
+  --sr-text-muted: #5a6a85;
+  --sr-primary: #1f6feb;
+  --sr-primary-fill: #1f6feb;
+  --sr-primary-soft: #e3edfd;
+  --sr-shadow: 0 1px 2px rgba(21,33,59,.06), 0 4px 16px rgba(21,33,59,.06);
+  --sr-focus: 0 0 0 3px rgba(31,111,235,.35);
+  --sr-radius: 12px;
+  --sr-radius-sm: 8px;
+  --sr-font-body: 14px;
+  --sr-font-meta: 13px;
+  --sr-font-title: 16px;
+  --sr-font-key: 15px;
+  --sr-font-metric: 24px;
+  color-scheme: light;
+  --sr-tone-accept-base: #16a34a;
+  --sr-tone-accept-fg: #107a38;
+  --sr-tone-accept-bg: #e3f4e9;
+  --sr-tone-accept-border: #addfc0;
+  --sr-tone-partial-base: #d97706;
+  --sr-tone-partial-fg: #a35904;
+  --sr-tone-partial-bg: #faefe1;
+  --sr-tone-partial-border: #f2cfa8;
+  --sr-tone-reject-base: #dc2626;
+  --sr-tone-reject-fg: #c62222;
+  --sr-tone-reject-bg: #fbe5e5;
+  --sr-tone-reject-border: #f3b3b3;
+  --sr-tone-fine-base: #db2777;
+  --sr-tone-fine-fg: #c5236b;
+  --sr-tone-fine-bg: #fbe5ef;
+  --sr-tone-fine-border: #f2b3cf;
+  --sr-tone-penalty-base: #7c3aed;
+  --sr-tone-penalty-fg: #7c3aed;
+  --sr-tone-penalty-bg: #efe7fd;
+  --sr-tone-penalty-border: #d1baf9;
+  --sr-tone-unknown-base: #64748b;
+  --sr-tone-unknown-fg: #5a687d;
+  --sr-tone-unknown-bg: #eceef1;
+  --sr-tone-unknown-border: #c9ced6;
+}
+:root[data-sr-theme="dark"], :host([data-sr-theme="dark"]) {
+  --sr-bg: #0b0b0c;
+  --sr-surface: #131314;
+  --sr-surface-2: #1b1b1c;
+  --sr-surface-3: #232324;
+  --sr-border: #2d2d2f;
+  --sr-text: #f3f3f4;
+  --sr-text-muted: #9ea0a4;
+  --sr-primary: #60a5fa;
+  --sr-primary-fill: #2563eb;
+  --sr-primary-soft: rgba(59,130,246,.15);
+  --sr-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  --sr-focus: 0 0 0 3px rgba(96,165,250,.45);
+  color-scheme: dark;
+  --sr-tone-accept-base: #16a34a;
+  --sr-tone-accept-fg: #2dac5c;
+  --sr-tone-accept-bg: #143320;
+  --sr-tone-accept-border: #14542c;
+  --sr-tone-partial-base: #d97706;
+  --sr-tone-partial-fg: #db7e12;
+  --sr-tone-partial-bg: #3f2911;
+  --sr-tone-partial-border: #6c400e;
+  --sr-tone-reject-base: #dc2626;
+  --sr-tone-reject-fg: #e66767;
+  --sr-tone-reject-bg: #3f1718;
+  --sr-tone-reject-border: #6d1c1c;
+  --sr-tone-fine-base: #db2777;
+  --sr-tone-fine-fg: #e45d99;
+  --sr-tone-fine-bg: #3f172a;
+  --sr-tone-fine-border: #6d1c41;
+  --sr-tone-penalty-base: #a78bfa;
+  --sr-tone-penalty-fg: #a78bfa;
+  --sr-tone-penalty-bg: #342d47;
+  --sr-tone-penalty-border: #56497c;
+  --sr-tone-unknown-base: #a1a1aa;
+  --sr-tone-unknown-fg: #a1a1aa;
+  --sr-tone-unknown-bg: #323235;
+  --sr-tone-unknown-border: #535358;
+}

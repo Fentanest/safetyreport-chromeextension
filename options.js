@@ -1,111 +1,23 @@
 'use strict';
-
-function el(id) { return document.getElementById(id); }
-
-// 저장된 설정 로드
-chrome.storage.sync.get(
-  ['serverUrl', 'apiKey', 'notifyCrawlDone', 'pollInterval'],
-  (data) => {
-    if (data.serverUrl) el('serverUrl').value = data.serverUrl;
-    if (data.apiKey) el('apiKey').value = data.apiKey;
-    el('notifyCrawlDone').checked = data.notifyCrawlDone !== false;
-    el('pollInterval').value = data.pollInterval ?? 5;
+(() => {
+  const status=document.getElementById('status'), login=document.getElementById('login'), logout=document.getElementById('logout');
+  const theme=document.getElementById('theme');
+  const send=message=>new Promise((resolve,reject)=>chrome.runtime.sendMessage(message,response=>{
+    if(chrome.runtime.lastError)reject(new Error('REQUEST_FAILED'));
+    else if(response?.error)reject(new Error(response.error));
+    else resolve(response?.data);
+  }));
+  const applyTheme=choice=>{document.documentElement.dataset.srTheme=choice==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):choice;};
+  chrome.storage.sync.get('theme',value=>{theme.value=value.theme||'system';applyTheme(theme.value);});
+  theme.addEventListener('change',async()=>{await chrome.storage.sync.set({theme:theme.value});applyTheme(theme.value);});
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme(theme.value));
+  async function refresh(){
+    try{const state=await send({type:'STATUS'});status.textContent=state.signedIn?(state.name?`${state.name} 계정으로 로그인됨`:'카카오 계정으로 로그인됨'):
+      state.error==='NOT_CONFIGURED'?'배포용 Supabase 공개 설정이 필요합니다.':'로그인하지 않았습니다.';
+      login.hidden=state.signedIn||state.error==='NOT_CONFIGURED';logout.hidden=!state.signedIn;
+    }catch{status.textContent='계정 상태를 확인하지 못했습니다.';}
   }
-);
-
-// 저장
-el('btnSave').addEventListener('click', () => {
-  const serverUrl = el('serverUrl').value.trim();
-  const apiKey = el('apiKey').value.trim();
-  const notifyCrawlDone = el('notifyCrawlDone').checked;
-  const pollInterval = Math.max(1, parseInt(el('pollInterval').value, 10) || 5);
-  const saveMsg = el('saveMsg');
-  const errMsg = el('errMsg');
-
-  saveMsg.textContent = '';
-  errMsg.textContent = '';
-
-  if (!serverUrl) {
-    errMsg.textContent = '서버 주소를 입력해 주세요.';
-    return;
-  }
-  if (!apiKey) {
-    errMsg.textContent = 'API 키를 입력해 주세요.';
-    return;
-  }
-
-  let origin;
-  try {
-    origin = new URL(serverUrl).origin + '/*';
-  } catch {
-    errMsg.textContent = '유효하지 않은 서버 주소입니다.';
-    return;
-  }
-
-  // 권한 요청은 반드시 사용자 제스처 핸들러에서 직접(동기적으로) 호출해야 함.
-  // 콜백 내부에서 호출하면 사용자 제스처 컨텍스트가 만료되어 조용히 실패함.
-  chrome.permissions.request({ origins: [origin] }, (granted) => {
-    if (!granted) {
-      errMsg.textContent = '서버 접근 권한이 허용되지 않았습니다. 설정이 저장되지 않았습니다.';
-      return;
-    }
-    chrome.storage.sync.set(
-      { serverUrl, apiKey, notifyCrawlDone, pollInterval },
-      () => {
-        saveMsg.textContent = '저장되었습니다.';
-        chrome.runtime.sendMessage({ type: 'RESET_ALARM', pollInterval });
-        setTimeout(() => { saveMsg.textContent = ''; }, 2500);
-      }
-    );
-  });
-});
-
-// 연결 테스트
-el('btnTest').addEventListener('click', () => {
-  const serverUrl = el('serverUrl').value.trim().replace(/\/$/, '');
-  const apiKey = el('apiKey').value.trim();
-  const resultEl = el('testResult');
-
-  resultEl.textContent = '테스트 중...';
-  resultEl.className = 'test-result';
-
-  if (!serverUrl || !apiKey) {
-    resultEl.textContent = '주소와 API 키를 먼저 입력하세요.';
-    resultEl.classList.add('test-fail');
-    return;
-  }
-
-  let origin;
-  try {
-    origin = new URL(serverUrl).origin + '/*';
-  } catch {
-    resultEl.textContent = '유효하지 않은 서버 주소입니다.';
-    resultEl.classList.add('test-fail');
-    return;
-  }
-
-  // 테스트 전에도 권한 요청 필요 (사용자 제스처 컨텍스트에서 직접 호출)
-  chrome.permissions.request({ origins: [origin] }, (granted) => {
-    if (!granted) {
-      resultEl.textContent = '서버 접근 권한이 거부되었습니다.';
-      resultEl.classList.add('test-fail');
-      return;
-    }
-    fetch(`${serverUrl}/api/v1/crawl/status`, {
-      headers: { 'X-API-Key': apiKey },
-    })
-      .then((res) => {
-        if (res.ok) {
-          resultEl.textContent = '연결 성공!';
-          resultEl.classList.add('test-ok');
-        } else {
-          resultEl.textContent = `실패 (HTTP ${res.status})`;
-          resultEl.classList.add('test-fail');
-        }
-      })
-      .catch((err) => {
-        resultEl.textContent = `연결 실패: ${err.message}`;
-        resultEl.classList.add('test-fail');
-      });
-  });
-});
+  login.addEventListener('click',async()=>{login.disabled=true;status.textContent='카카오 로그인 중…';try{await send({type:'LOGIN'});}catch{status.textContent='로그인하지 못했습니다. 다시 시도해 주세요.';}finally{login.disabled=false;await refresh();}});
+  logout.addEventListener('click',async()=>{logout.disabled=true;try{await send({type:'LOGOUT'});}catch{status.textContent='로그아웃하지 못했습니다.';}finally{logout.disabled=false;await refresh();}});
+  refresh();
+})();
