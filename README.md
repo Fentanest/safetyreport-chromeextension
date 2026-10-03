@@ -46,6 +46,8 @@
 
 Node.js 22 이상에서 `npm ci && npm test && npm run build`. `build/`가 unpacked 확장 디렉터리입니다. 기본 빌드는 클라우드 공개 설정 없이도 셀프호스팅을 사용할 수 있습니다. 클라우드 연결 빌드는 기존 프로젝트의 **공개** URL·publishable key를 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`에 지정합니다. service_role 키나 Kakao secret을 넣지 않습니다.
 
+GitHub Actions는 같은 이름의 저장소 Variables `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`를 빌드 환경에 주입합니다. Actions의 ZIP에는 이 공개 설정이 포함되므로 사용자가 옵션에 입력할 필요가 없습니다. 로컬 빌드는 해당 환경변수를 별도로 지정해야 하며 GitHub Variables를 자동으로 가져오지 않습니다.
+
 `npm run test:contracts`는 map 정본 my-reports 사본의 MANIFEST와 PC 정본 selfhost-compat 사본·테스트 벡터를 검사합니다. 정본 사본을 임의로 수정하지 않습니다. my-reports 갱신은 map의 `scripts/integration/sync_contract_copy.py --contract my-reports --to <확장 레포>`를 사용합니다. selfhost-compat는 PC `contracts/selfhost-compat/`에서 파일을 그대로 복사하고 스냅샷 해시를 검사합니다.
 
 실제 Chromium 설치 검증은 unpacked 확장을 지원하는 실행 파일을 `SR_CHROMIUM_PATH`에 지정해 `npm run test:backend-browser`와 `npm run test:action-popup`을 실행합니다. 전자는 production 코드와 실제 worker/content script를 로컬 mock 서버로 검사하고, 테스트 사본 manifest에 **그 mock origin과 알림만** 미리 허용합니다. 실제 권한 허용 팝업과 카카오 인증·운영 서버 검증은 별도입니다. 결과와 화면 캡처는 `artifacts/backend-browser/`, 검증 기록은 `CHANGELOG.md`에 남깁니다. OS Alt-Tab 자체는 headless 검증에 포함되지 않습니다.

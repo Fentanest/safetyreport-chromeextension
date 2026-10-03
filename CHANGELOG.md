@@ -7,6 +7,15 @@
 
 ---
 
+## 2026-10-03 · GitHub 빌드의 Supabase 공개키 변수 참조 수정
+
+- GitHub 저장소 Variables에는 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`가 등록되어 있으나 workflow가 공개키를 `vars.PUBLISHABLE_KEY`로 참조하던 오류를 수정했다. 이름 확인과 읽기만 수행했으며 GitHub 설정은 변경하지 않았다.
+- Actions 빌드는 두 공개 설정을 번들에 포함한다. 로컬 빌드는 GitHub Variables를 자동으로 읽지 않는다는 차이를 README에 명시했다.
+- 등록된 실제 GitHub Variables를 출력하지 않고 임시 디렉터리의 빌드 환경에 전달하여 빌드 성공·번들의 두 값 포함·정확한 Supabase host permission을 확인했다. mock 값 빌드도 통과했다. 임시 파일은 제거하고 기존 로컬 build는 보존했다.
+- 카카오 로그인·운영 API 호출·실제 Actions 실행은 하지 않았다. 제품 코드는 변경하지 않아 제품 버전은 1.2.1을 유지한다. 로컬 커밋만 작성하며 push·배포 없음.
+
+---
+
 ## 2026-10-03 · 1.2.1 최근 변경 검토의 버그·UI 개선
 
 수정:

@@ -32,7 +32,7 @@ jobs:
         run: npm run build
         env:
           SR_SUPABASE_URL: ${{ vars.SR_SUPABASE_URL }}
-          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
+          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SR_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Package extension
         run: npm run package
