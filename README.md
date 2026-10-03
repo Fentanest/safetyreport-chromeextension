@@ -52,7 +52,7 @@ GitHub Actions는 같은 이름의 저장소 Variables `SR_SUPABASE_URL`, `SR_SU
 
 실제 Chromium 설치 검증은 unpacked 확장을 지원하는 실행 파일을 `SR_CHROMIUM_PATH`에 지정해 `npm run test:backend-browser`와 `npm run test:action-popup`을 실행합니다. 전자는 production 코드와 실제 worker/content script를 로컬 mock 서버로 검사하고, 테스트 사본 manifest에 **그 mock origin과 알림만** 미리 허용합니다. 실제 권한 허용 팝업과 카카오 인증·운영 서버 검증은 별도입니다. 결과와 화면 캡처는 `artifacts/backend-browser/`, 검증 기록은 `CHANGELOG.md`에 남깁니다. OS Alt-Tab 자체는 headless 검증에 포함되지 않습니다.
 
-필수 host permission은 지정한 Supabase origin 하나입니다. 개인 서버 주소는 설치 시 알 수 없으므로 manifest의 optional HTTP/HTTPS 범위 안에서, 저장/테스트 클릭 때 **입력한 origin 하나만** 요청합니다. `<all_urls>`나 전체 HTTP/HTTPS 권한을 한꺼번에 요청하지 않으며 CSP를 완화하지 않습니다.
+Supabase 통신의 필수 `host_permissions`는 빌드 시 지정한 프로젝트의 HTTPS origin 하나로 자동 설정됩니다. 안전신문고 패널의 정적 주입은 `content_scripts.matches`에서 `http://www.safetyreport.go.kr/*`, `https://www.safetyreport.go.kr/*` 두 주소에만 허용하고, Shadow DOM 스타일 리소스도 같은 범위에 공개합니다. background의 메시지 검증 역시 정확한 www 호스트의 최상위 페이지와 확장 ID만 허용합니다. 안전신문고 API를 background가 호출하거나 쿠키를 읽는 권한은 추가하지 않습니다. 개인 서버 주소는 설치 시 알 수 없으므로 manifest의 optional HTTP/HTTPS 범위 안에서, 저장/테스트 클릭 때 **입력한 origin 하나만** 요청합니다. `<all_urls>`나 전체 HTTP/HTTPS 권한을 한꺼번에 요청하지 않으며 CSP를 완화하지 않습니다.
 
 클라우드 운영 적용 절차는 map `docs/integration/chromeextension/REPORT.md` §6을 따릅니다. 확장 ID의 `chrome.identity.getRedirectURL('supabase-auth')`를 기존 Supabase Auth Redirect URLs에 추가하고 기존 PC·모바일·지도 URL은 유지합니다. Origin allowlist와 OAuth Redirect URL은 서로 다른 설정입니다. 이 저장소의 로컬 빌드·테스트는 운영 배포나 스토어 제출을 뜻하지 않습니다.
 

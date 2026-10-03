@@ -279,7 +279,7 @@ const safeError = error => ERROR_CODES.has(error?.message) ? error.message : 'RE
 function senderRole(sender) {
   if (sender.id !== chrome.runtime.id) return null;
   if (sender.url === chrome.runtime.getURL('popup.html') || sender.url === chrome.runtime.getURL('options.html')) return 'trusted';
-  if (sender.frameId === 0 && /^https:\/\/www\.safetyreport\.go\.kr\//.test(sender.url || '')) return 'content';
+  if (sender.frameId === 0 && /^https?:\/\/www\.safetyreport\.go\.kr\//.test(sender.url || '')) return 'content';
   return null;
 }
 

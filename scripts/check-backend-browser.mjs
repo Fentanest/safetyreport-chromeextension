@@ -84,7 +84,7 @@ try{
   await popup.locator('#crawlStop').click();await popup.waitForFunction(()=>document.getElementById('crawlState').textContent==='크롤링 대기 중');
   const crawlButton=await popup.locator('#crawlStart').boundingBox();assert.ok(crawlButton.y+crawlButton.height<570);
   for(const theme of ['light','dark']){await options.locator('#theme').selectOption(theme);await popup.waitForFunction(t=>document.documentElement.dataset.srTheme===t,theme);await popup.locator('#content').evaluate(el=>el.scrollTop=0);await popup.screenshot({path:join(artifacts,`popup-${theme}.png`)});}
-  await context.route('https://www.safetyreport.go.kr/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><html lang="ko"><body style="margin:30px"><label>차량번호 <input id="VHRNO"></label><p>주소 <span id="add1"></span></p><button style="position:fixed;right:20px;bottom:20px" id="native">원래 버튼</button><script>window.events=[];document.addEventListener("click",e=>events.push(e.target.id));document.addEventListener("input",e=>events.push("input:"+e.target.id));</script></body></html>'}));
+  await context.route(/^https?:\/\/www\.safetyreport\.go\.kr\//,route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><html lang="ko"><body style="margin:30px"><label>차량번호 <input id="VHRNO"></label><p>주소 <span id="add1"></span></p><button style="position:fixed;right:20px;bottom:20px" id="native">원래 버튼</button><script>window.events=[];document.addEventListener("click",e=>events.push(e.target.id));document.addEventListener("input",e=>events.push("input:"+e.target.id));</script></body></html>'}));
   await context.grantPermissions(['clipboard-read'],{origin:'https://www.safetyreport.go.kr'});
   const page=await context.newPage();await page.goto('https://www.safetyreport.go.kr/#report');await page.bringToFront();
   await page.locator('#VHRNO').fill('12가3');await page.waitForTimeout(700);
@@ -109,6 +109,16 @@ try{
   assert.equal(await page.evaluate(()=>window.__addressNode===document.getElementById('add1')),true);
   assert.equal(await page.locator('#sr-address-panel-host').isVisible(),true);
   assert.ok((await shadow(page,'sr-address-panel-host','this.textContent')).includes('김담당'));
+  // Real content-script injection and worker dispatch on the HTTP document too.
+  const httpPage=await context.newPage();await httpPage.goto('http://www.safetyreport.go.kr/#report');
+  assert.ok(httpPage.url().startsWith('http://www.safetyreport.go.kr/'),'fixture must remain HTTP to verify both schemes');
+  await httpPage.locator('#VHRNO').fill('12가3456');await httpPage.locator('#VHRNO').click();await httpPage.waitForTimeout(900);
+  assert.equal(await httpPage.locator('#sr-vehicle-panel-host').isVisible(),true);
+  assert.ok((await shadow(httpPage,'sr-vehicle-panel-host','this.textContent')).includes('일부수용'));
+  const font=await shadow(httpPage,'sr-vehicle-panel-host',"getComputedStyle(this.querySelector('.sr-record-agency')).fontSize");
+  assert.equal(font,'14px','HTTP Shadow DOM must load extension styles');
+  assert.ok(!(await shadow(httpPage,'sr-vehicle-panel-host','this.textContent')).includes('browser-mock-key'));
+  await httpPage.screenshot({path:join(artifacts,'vehicle-http.png')});await httpPage.close();
   const twin=await context.newPage();await twin.goto(`chrome-extension://${id}/options.html`);
   await twin.waitForFunction(()=>document.getElementById('backendMode').value==='selfhost');
   await options.locator('#backendMode').selectOption('cloud');await options.waitForFunction(()=>document.getElementById('cloudSettings').hidden===false);
@@ -173,6 +183,6 @@ try{
   await restarted.locator('#backendMode').selectOption('selfhost');await restarted.waitForFunction(()=>!document.getElementById('selfhostSettings').hidden);
   // Offline result is distinct from authentication/version failures.
   await new Promise(r=>server.close(r));await restarted.locator('#btnTest').click();await restarted.waitForFunction(()=>document.getElementById('testResult').textContent.includes('연결할 수 없습니다'));
-  const report={browser:await context.browser()?.version(),newInstall:true,selfhost:true,cloudSelfhostRequests:0,focusTabSwitch:true,syntheticBlurFocus:true,altTabKeyChord:true,osAltTab:"headless: not tested",coldStartMigrations:true,closedShadow:true,copy:true,nodeReplacement:true,nativeEvents:true,workerStop:true,browserRestart:true,oldServer:true,unsupportedProtocol:true,authFailure:true,offline:true,unchangedNodeNavigation:true,optionsTabSync:true,betweenAlarmCompletion:true,badgeWorkerAndBrowserRestart:true,popupCrawlControlsFirst:true,serverRequests:logs.length,kakao:'not tested',productionServer:'not tested',hostPermissionDialog:'test manifest pregranted exact mock origin'};
+  const report={browser:await context.browser()?.version(),newInstall:true,selfhost:true,cloudSelfhostRequests:0,focusTabSwitch:true,syntheticBlurFocus:true,altTabKeyChord:true,osAltTab:"headless: not tested",coldStartMigrations:true,closedShadow:true,copy:true,nodeReplacement:true,nativeEvents:true,workerStop:true,browserRestart:true,oldServer:true,unsupportedProtocol:true,authFailure:true,offline:true,unchangedNodeNavigation:true,optionsTabSync:true,betweenAlarmCompletion:true,badgeWorkerAndBrowserRestart:true,popupCrawlControlsFirst:true,httpAndHttpsContentScripts:true,httpShadowStyles:true,serverRequests:logs.length,kakao:'not tested',productionServer:'not tested',hostPermissionDialog:'test manifest pregranted exact mock origin'};
   await writeFile(join(artifacts,'result.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
 }finally{if(context)await context.close();server.close();await rm(dir,{recursive:true,force:true});}

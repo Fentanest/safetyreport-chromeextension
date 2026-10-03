@@ -10,7 +10,7 @@ export const SUPA = 'https://test-project.supabase.co';
 export const authKey = 'sb-test-project-auth-token';
 export const session = id => ({ access_token: 'private-access', refresh_token: 'private-refresh', expires_at: Date.now()/1000+3600,
   user: { id, user_metadata: { full_name: '테스트 계정' } } });
-const event = () => {const listeners=[];return { addListener(fn){listeners.push(fn);}, emit(...args){for(const fn of listeners)fn(...args);} };};
+const event = () => {const listeners=[];return { addListener(fn){listeners.push(fn);}, emit(...args){return listeners.map(fn=>fn(...args));} };};
 export async function worker({ local = {}, sync = {}, fetchImpl, configured = true, auth = {}, realSdk = false } = {}) {
   const changed = event(), messages = event(), alarms = new Map(), badges = [], notices = new Map(), calls = [];
   const stores = { local: structuredClone(local), sync: structuredClone(sync), session: {} };
@@ -42,9 +42,12 @@ export async function worker({ local = {}, sync = {}, fetchImpl, configured = tr
     fetch:network,AbortController,URL,Map,Set,TextEncoder,crypto:webcrypto,setTimeout,clearTimeout,console});
   vm.runInContext(code,context);
   await vm.runInContext('ready',context);
-  async function send(message,role='trusted'){
-    const sender={id:EXT,url:role==='trusted'?chrome.runtime.getURL('options.html'):'https://www.safetyreport.go.kr/',frameId:0};
-    return new Promise((resolve,reject)=>{const listenerResult=messages.emit(message,sender,response=>response.error?reject(new Error(response.error)):resolve(response.data));});
+  async function send(message,role='trusted',senderOverrides={}){
+    const sender={id:EXT,url:role==='trusted'?chrome.runtime.getURL('options.html'):'https://www.safetyreport.go.kr/',frameId:0,...senderOverrides};
+    return new Promise((resolve,reject)=>{
+      const accepted=messages.emit(message,sender,response=>response.error?reject(new Error(response.error)):resolve(response.data));
+      if(!accepted.includes(true))reject(new Error('MESSAGE_REJECTED'));
+    });
   }
   return {send,chrome,stores,calls,alarms,badges,notices,context,settle:()=>vm.runInContext('settingsFlight',context)};
 }

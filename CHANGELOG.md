@@ -7,6 +7,17 @@
 
 ---
 
+## 2026-10-03 · 1.2.2 안전신문고 HTTP/HTTPS 페이지 범위와 클라우드 접근 권한 확인
+
+- 기존 HTTPS에 더해 `http://www.safetyreport.go.kr/*`를 content script와 Shadow DOM 스타일 WAR의 정확한 주입 범위에 추가했다. worker는 같은 정확한 HTTP/HTTPS www 호스트의 최상위 페이지·확장 ID만 content 역할로 허용한다. content에는 조회/번호/상태만 허용하며 설정·로그인·크롤링 제어는 계속 거부한다.
+- Supabase `host_permissions`는 기존 빌드 로직이 프로젝트 HTTPS origin 하나를 자동 추가함을 확인했다. 등록된 실제 GitHub 공개 설정으로 임시 빌드하고 unpacked Chromium에서 `chrome.permissions.contains`가 true임을 확인했다. 설정 값은 출력하지 않았으며 cloud 네트워크 요청은 0건이었다. 기존 로컬 build와 운영 설정은 변경하지 않는 임시 검증이었다.
+- `npm test`: 50개 통과. HTTP/HTTPS에서 두 백엔드 조회, 비밀키/제어 접근 거부, 위장 도메인·다른 scheme·다른 포트·하위 frame·타 확장 ID 거부 및 manifest 주입/스타일 범위 일치를 추가 검사했다.
+- 계약 테스트 10개, 기본 빌드, 실제 action popup 경계 검사 통과. 기존 PC/map 계약 사본·전체 권한 grant·CSP는 변경하지 않았다.
+- 별도 Chromium 153.0.8010.12 + 로컬 mock: 실제 HTTP 문서 URL을 유지한 상태에서 closed Shadow DOM 자동 주입·조회·14px 스타일 적용을 확인했고 기존 HTTPS 흐름·복사·노드 교체·모드별 통신·재시작도 통과했다. 결과에 `httpAndHttpsContentScripts`, `httpShadowStyles`를 기록했다.
+- 실제 운영 페이지의 로그인/입력 흐름과 카카오 OAuth·운영 API 호출·권한 다이얼로그는 별도 검증이다. 로컬 커밋만 작성하며 push·배포 없음.
+
+---
+
 ## 2026-10-03 · GitHub 빌드의 Supabase 공개키 변수 참조 수정
 
 - GitHub 저장소 Variables에는 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`가 등록되어 있으나 workflow가 공개키를 `vars.PUBLISHABLE_KEY`로 참조하던 오류를 수정했다. 이름 확인과 읽기만 수행했으며 GitHub 설정은 변경하지 않았다.

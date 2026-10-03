@@ -182,3 +182,36 @@ test('real Supabase SDK: a late response body cannot persist refreshed tokens af
   await app.send({type:'SET_MODE',backendMode:'selfhost'});await app.send({type:'SET_MODE',backendMode:'cloud'});release();await rejection;
   assert.equal(app.stores.local[authKey],expired);assert.equal(app.calls.filter(c=>c.url).length,1);
 });
+
+test('worker: official HTTP and HTTPS pages can query each backend but cannot access credentials or control it',async()=>{
+  for(const backendMode of ['selfhost','cloud']){
+    const app=await worker({local:{backendMode,selfhost:config,[authKey]:session('a')},fetchImpl:async url=>backendMode==='selfhost'?mockSelfhost(url):Response.json(fixture('search-vehicle-first-page'))});
+    for(const url of ['http://www.safetyreport.go.kr/#report','https://www.safetyreport.go.kr/#report']){
+      const result=await app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',{url});
+      assert.equal(result.summary.total,backendMode==='selfhost'?selfRows.length:fixture('search-vehicle-first-page').summary.total);
+      assert.equal(result.apiKey,undefined);assert.equal(result.access_token,undefined);
+      for(const type of ['GET_SETTINGS','SET_MODE','SAVE_SERVER','LOGIN','LOGOUT','CRAWL_START'])await assert.rejects(app.send({type},'content',{url}),/FORBIDDEN/);
+    }
+    const networkCount=app.calls.filter(call=>call.url).length;
+    for(const sender of [
+      {url:'https://www.safetyreport.go.kr.evil.example/'},
+      {url:'https://www.safetyreport.go.kr@evil.example/'},
+      {url:'https://evil.example/www.safetyreport.go.kr/'},
+      {url:'ftp://www.safetyreport.go.kr/'},
+      {url:'http://safetyreport.go.kr/'},
+      {url:'https://www.safetyreport.go.kr:444/'},
+      {url:'http://www.safetyreport.go.kr/',frameId:1},
+      {url:'https://www.safetyreport.go.kr/',id:'another-extension'},
+    ])await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',sender),/MESSAGE_REJECTED/);
+    assert.equal(app.calls.filter(call=>call.url).length,networkCount);
+  }
+});
+test('manifest: official HTTP/HTTPS injection and Shadow DOM resources share the same exact host scope',()=>{
+  const manifest=JSON.parse(readFileSync('manifest.json','utf8'));
+  const sites=['http://www.safetyreport.go.kr/*','https://www.safetyreport.go.kr/*'];
+  assert.deepEqual(manifest.content_scripts[0].matches,sites);
+  assert.deepEqual(manifest.web_accessible_resources[0].matches,sites);
+  assert.equal(manifest.content_scripts[0].all_frames ?? false,false);
+  assert.equal(manifest.permissions.includes('cookies'),false);
+  assert.equal(manifest.permissions.includes('webRequest'),false);
+});

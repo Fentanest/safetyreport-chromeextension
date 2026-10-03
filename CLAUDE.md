@@ -1,6 +1,6 @@
 # 확장 구조 및 운영 메모
 
-현재 제품 버전 1.2.1. `src/background.js`를 esbuild로 묶은 `build/background.js`, `content.js`, `popup.js`, `options.js`, `shared-ui.js`가 실행 기준이다. 작업 기록은 `CHANGELOG.md`, 모드별 기능표와 사용 안내는 `README.md`에 둔다.
+현재 제품 버전 1.2.2. `src/background.js`를 esbuild로 묶은 `build/background.js`, `content.js`, `popup.js`, `options.js`, `shared-ui.js`가 실행 기준이다. 작업 기록은 `CHANGELOG.md`, 모드별 기능표와 사용 안내는 `README.md`에 둔다.
 
 - `src/backendConfig.js`: `backendMode: selfhost | cloud` 및 null(선택 대기)의 순수 마이그레이션. 명시 선택 우선, legacy 서버와 Supabase 세션을 모두 보존한다. 서버 origin만 받고 HTTP·LAN·localhost·IPv6를 지원한다.
 - `src/background.js`: 모드 dispatch, 신뢰된 컨텍스트만 설정/로그인/크롤링 제어 허용. `storage.local`은 TRUSTED_CONTEXTS로 제한한다. 모드/계정/서버 변경과 worker 재시작은 요청 abort·세대 갱신·캐시 폐기·페이지 알림을 수행한다. cloud client는 필요할 때만 생성하며, SDK의 오래된 refresh 재시도도 클라이언트 세대로 차단한다. 자동 refresh 없음, 요청 시 refresh·401 재시도는 flight를 공유한다. 모드 전환은 로그아웃하지 않는다.
@@ -13,6 +13,7 @@
 - `ui-tokens.css` / `ui-components.css`: 기존 PC 토큰, 모바일 딥 다크·상태톤·13~16px 글자 크기와 단일 스크롤 유지. `content.css`는 host만, 실제 스타일은 ShadowRoot 안에 넣는다.
 - `contracts/my-reports/`: map 정본의 바이트 사본. 직접 고치지 않고 map의 `scripts/integration/sync_contract_copy.py --contract my-reports --to <이 레포>`로 갱신한다. 운영 지침은 map `docs/integration/chromeextension/EXTENSION_HANDOFF.md` 및 `REPORT.md` §6.
 - `contracts/selfhost-compat/`: PC `safetyreport` 정본의 바이트 사본. product/version·HTTP 오류·WS 계약·공유 vectors를 그대로 복사한다. 소비자 테스트의 스냅샷 해시도 정본 복사에 맞춰 갱신한다.
+- 안전신문고 페이지 범위: content_scripts와 Shadow DOM 스타일 WAR는 `http://www.safetyreport.go.kr/*`, `https://www.safetyreport.go.kr/*`에만 적용한다. worker content 역할도 같은 HTTP/HTTPS 정확 호스트의 top frame + 확장 ID만 허용한다. 다른 호스트·유사 도메인·하위 frame은 거부한다.
 - host permission: 필수는 빌드한 Supabase origin만, optional HTTP/HTTPS 범위에서 사용자가 입력한 서버 origin만 클릭 시 요청. 전체 host grant와 CSP 완화 금지. 테스트 manifest의 exact mock origin 사전 허용을 실제 권한 다이얼로그 검증으로 부르지 않는다.
 - 검증: `npm test`, `npm run test:contracts`, 빌드 후 `SR_CHROMIUM_PATH=... npm run test:backend-browser`, `npm run test:action-popup`. browser artifact는 `artifacts/backend-browser/`에 생성한다.
 
