@@ -74,3 +74,13 @@ test('shared-ui renders the real v1 fixtures: nested summary, null fine sum, ser
   assert.ok(managers.includes('담당자 더 보기') === Boolean(first.managers.next_cursor));
   assert.ok(ui.record({ ...first.reports.items[0], official_url: 'https://evil.example/#mypage/mysafereport/1' }).includes('href=') === false);
 });
+
+test('worker DTO refuses missing counts and nested objects disguised as public fields', async () => {
+  const { projectCloudDto } = await import('../src/myReportsClient.js');
+  const empty = fixture('search-empty');
+  assert.equal(projectCloudDto(empty, 'search').summary.fine_amount.confirmed_sum_won, null);
+  const missing = structuredClone(empty); delete missing.summary.status.accepted;
+  assert.throws(() => projectCloudDto(missing, 'search'), /REQUEST_FAILED/);
+  const leaked = fixture('search-vehicle-first-page'); leaked.reports.items[0].vehicle_number = { apiKey: 'PRIVATE' };
+  assert.throws(() => projectCloudDto(leaked, 'search'), /REQUEST_FAILED/);
+});

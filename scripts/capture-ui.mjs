@@ -18,7 +18,7 @@ try{
     const popup=await browser.newPage({viewport:{width:460,height:570}});
     await popup.addInitScript(({base,data,theme})=>{
       window.chrome.runtime={getURL:name=>base+name,lastError:null,
-        sendMessage:(message,respond)=>respond({data:message.type==='STATUS'?{signedIn:true,name:'시험 사용자'}:message.type==='SUMMARY'?data.summary:data.first}),
+        sendMessage:(message,respond)=>respond({data:message.type==='STATUS'?{backendMode:'cloud',signedIn:true,name:'시험 사용자'}:message.type==='SUMMARY'?data.summary:data.first}),
         onMessage:{addListener(){}},openOptionsPage(){}};
       window.chrome.storage={sync:{get:(_key,respond)=>respond({theme}),onChanged:{addListener(){}}},onChanged:{addListener(){}}};
     },{base,data,theme});

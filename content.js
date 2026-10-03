@@ -12,6 +12,7 @@
     timer: null, open: false, dismissed: false, data: null, copying: false, cancelCopy: false, managerOpen: false,
   }]));
   const panels = {};
+  let backendMode = null;
   let theme = 'system', scanQueued = false, positionQueued = false;
   const themeValue = () => theme === 'system'
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
@@ -40,7 +41,7 @@
     const shell = document.createElement('div');
     shell.className = 'sr-ui sr-panel';
     shell.setAttribute('role','dialog');
-    shell.setAttribute('aria-label',kind === 'vehicle' ? '이 차량의 내 완료 신고' : '이 주소의 내 완료 신고');
+    shell.setAttribute('aria-label',kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고');
     root.append(shell);
     document.body.append(host);
     root.addEventListener('click', event => {
@@ -100,14 +101,11 @@
   function render(kind,message='') {
     const s = states[kind], p = panel(kind), data = s.data;
     const heading = kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고';
+    const scope = data?.backend === 'selfhost' ? '내 서버의 신고 · 처리중 포함' : backendMode === 'selfhost' ? '셀프호스팅 · 내 서버' : backendMode === 'cloud' ? '클라우드 · 내가 공유한 완료 신고' : '현재 선택한 백엔드로 조회';
     const total = Number(data?.summary?.total || 0), missing = Number(data?.summary?.report_number_missing || 0);
-    p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title">${heading}<span class="sr-plain-count">${data ? `${SRUI.count(total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.esc(s.query)}</p></div><div class="sr-header-actions">${data && total>missing ? '<button class="sr-button" data-action="copy">신고번호 복사</button>' : ''}<button class="sr-icon-button" data-action="close" aria-label="닫기">✕</button></div></header><div class="sr-panel-content">${data ? `${SRUI.summary(data.summary)}${kind==='address'?SRUI.managers(data.managers,s.managerOpen):''}${SRUI.records(data.reports)}${data.reports?.next_cursor?'<button class="sr-button sr-more" data-action="more">신고 더 보기</button>':''}` : `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':'내 계정으로 공유한 완료 신고'}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
+    p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title">${heading}<span class="sr-plain-count">${data ? `${SRUI.count(total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.esc(s.query)}</p></div><div class="sr-header-actions">${data && total>missing ? '<button class="sr-button" data-action="copy">신고번호 복사</button>' : ''}<button class="sr-icon-button" data-action="close" aria-label="닫기">✕</button></div></header><div class="sr-panel-content">${data ? `${SRUI.summary(data.summary)}${kind==='address'?SRUI.managers(data.managers,s.managerOpen):''}${SRUI.records(data.reports)}${data.reports?.next_cursor?'<button class="sr-button sr-more" data-action="more">신고 더 보기</button>':''}` : `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':SRUI.esc(scope)}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
   }
-  const failureText = code => code==='AUTH_REQUIRED'?'확장 아이콘에서 카카오 로그인 후 조회해 주세요.':
-    code==='ACCESS_DENIED'?'이 계정의 공유 동의 또는 접근 상태를 확인해 주세요.':
-    code==='NOT_CONFIGURED'?'확장 연결 설정이 필요합니다.':
-    code==='RATE_LIMITED'?'요청이 많습니다. 잠시 후 입력칸을 다시 눌러 주세요.':
-    code==='UNAVAILABLE'?'서버가 잠시 응답하지 않습니다. 잠시 후 다시 시도해 주세요.':'조회 실패. 입력칸을 다시 누르면 재시도합니다.';
+  const failureText = SRUI.errorText;
   async function search(kind,retried=false) {
     const s=states[kind], query=s.query, generation=s.generation;
     if (!s.open || s.dismissed || !query) return;
@@ -115,7 +113,8 @@
     try {
       const result=await send({type:'SEARCH',kind,query,fresh:retried});
       if (generation!==s.generation || query!==s.query || !s.open || s.dismissed || !s.node?.isConnected) return;
-      s.data={summary:result.summary,reports:result.reports,managers:result.managers}; render(kind);
+      backendMode=result.backend || 'cloud';
+      s.data={backend:backendMode,summary:result.summary,reports:result.reports,managers:result.managers}; render(kind);
     } catch(error) {
       if (generation!==s.generation || !s.open) return;
       if (error.message==='DATASET_CHANGED' && !retried) return search(kind,true);
@@ -234,5 +233,14 @@
   window.visualViewport?.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('scroll',queuePosition);
   window.addEventListener('hashchange',()=>{for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);states[kind].query='';}queueScan();});
-  chrome.runtime.onMessage.addListener(message=>{if(message?.type==='AUTH_CHANGED')for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);}});
+  chrome.runtime.onMessage.addListener(message=>{
+    if(message?.type==='AUTH_CHANGED'||message?.type==='DATA_INVALIDATED'){backendMode=null;for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);}}
+    if(message?.type==='WORKER_RESTARTED'){
+      backendMode=null;
+      for(const kind of ['vehicle','address']){
+        invalidate(kind);
+        if(states[kind].open&&!states[kind].dismissed){render(kind,'현재 연결을 다시 확인하는 중…');states[kind].timer=setTimeout(()=>search(kind),0);}
+      }
+    }
+  });
 })();

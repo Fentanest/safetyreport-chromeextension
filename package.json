@@ -3,7 +3,9 @@
     "build": "node scripts/build.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.mjs",
     "package": "node scripts/package.mjs",
-    "test:action-popup": "node scripts/check-action-popup.mjs"
+    "test:action-popup": "node scripts/check-action-popup.mjs",
+    "test:backend-browser": "node scripts/check-backend-browser.mjs",
+    "test:contracts": "node --experimental-strip-types --no-warnings --test tests/my-reports-client.test.mjs tests/selfhost-client.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.1"

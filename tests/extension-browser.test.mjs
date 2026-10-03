@@ -27,7 +27,7 @@ async function setup(page) {
       :message.part==='managers'?data.managers:message.cursor?data.next:data.first;
     const runtime={id:'abcdefghijklmnopabcdefghijklmnop',lastError:null,
       getURL:name=>`${base}${name}`,onMessage:{addListener(){}},
-      sendMessage(message,respond){calls.push(message);if(message.type==='STATUS')respond({data:{signedIn:true,name:'시험 사용자'}});
+      sendMessage(message,respond){calls.push(message);if(message.type==='STATUS')respond({data:{backendMode:'cloud',signedIn:true,name:'시험 사용자'}});
         else setTimeout(()=>respond({data:pick(message)}),message.type==='SEARCH'?window.__searchDelay:0);},
       openOptionsPage(){}};
     window.chrome.runtime=runtime;
@@ -225,7 +225,7 @@ test('options shows only the button that fits the account state (login xor logou
       const page=await browser.newPage({viewport:{width:420,height:640}});
       await page.addInitScript(({base,signedIn})=>{
         window.chrome.runtime={getURL:n=>base+n,lastError:null,onMessage:{addListener(){}},
-          sendMessage:(m,r)=>r({data:m.type==='STATUS'?(signedIn?{signedIn:true,name:'시험 사용자'}:{signedIn:false}):{}})};
+          sendMessage:(m,r)=>r({data:m.type==='STATUS'?(signedIn?{backendMode:'cloud',signedIn:true,name:'시험 사용자'}:{backendMode:'cloud',signedIn:false}):{}})};
         window.chrome.storage={sync:{get:(_k,cb)=>cb({theme:'light'}),set:async()=>{}},onChanged:{addListener(){}}};
       },{base:`${url('')}/`,signedIn});
       await page.goto(url('options.html'));

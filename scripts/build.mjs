@@ -13,9 +13,8 @@ await mkdir(resolve(out, 'icons'), { recursive: true });
 await mkdir(resolve(out, 'assets'), { recursive: true });
 const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
 manifest.host_permissions = url ? [`${url}/*`] : [];
-manifest.description = '카카오 계정으로 본인이 공유한 완료 신고 조회';
-manifest.permissions = ['storage', 'identity', 'clipboardWrite'];
-delete manifest.optional_host_permissions;
+manifest.description = '개인 safetyreport 서버 또는 클라우드에서 내 신고 조회';
+manifest.permissions = ['storage', 'identity', 'clipboardWrite', 'alarms'];
 manifest.background = { service_worker: 'background.js', type: 'module' };
 await writeFile(resolve(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 for (const file of ['popup.html','popup.css','popup.js','options.html','options.css','options.js',

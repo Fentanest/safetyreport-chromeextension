@@ -7,6 +7,43 @@
 
 ---
 
+## 2026-10-03 · 1.2.0 셀프호스팅 / 클라우드 실제 백엔드 분리
+
+최신 확장 dev `b0127dc`를 fast-forward한 뒤 `feat/backend-modes-20261003`에서 작업. 최초 미커밋 변경 없음. 로컬 구현·커밋이며 push·배포·스토어 제출 없음.
+
+변경:
+- 옵션 상단에 `backendMode: selfhost | cloud`와 명시 선택 대기를 추가. 과거 서버 주소·API 키·연결 테스트·알림·확인 주기를 복구하고 각 모드 설정을 따로 보존한다. 저장과 입력값 연결 테스트를 구분한다.
+- worker adapter가 실제 PC REST와 Supabase my-reports POST를 분기한다. 차량·주소·요약·최근 답변·번호 복사·공식 원문/내 서버 상세·서버 관리·크롤링 제어·알림·배지를 복구/유지한다. 모드별 기능표는 README.
+- selfhost 인증·동의는 서버가 결정하며 확장 Supabase 로그인은 불필요. cloud에는 서버 키·호환 헤더·크롤링 메뉴·폴링·처리중 배지를 보내거나 표시하지 않는다. 실패 시 다른 백엔드로 전환하지 않는다.
+- explicit 선택 > legacy 단일 설정 추론, 양쪽 설정/신규 설치는 선택 UI. legacy sync 서버 설정을 TRUSTED_CONTEXTS local에 먼저 옮기고 비밀키 사본만 제거. worker·브라우저 재시작에도 선택 유지.
+- 모드/서버/계정 변경 때 AbortController·세대 검증·backend/서버 origin 또는 Supabase 계정/조회 조건 캐시 폐기. SDK의 이전 refresh 재시도도 원래 client 세대에 묶어 빠른 모드 왕복 후 추가 통신을 막는다. 명시 로그아웃은 오프라인에서도 자기 local 세션을 제거한다.
+- PC 정본 `contracts/selfhost-compat/README.md`, `vectors.json`을 바이트 복사. PC dev `a35b7d2` 기반 `fix/v3-user-reports-20261003` 작업 트리에 생성된 정본을 사용했다(당시 원격 dev에는 아직 없음). README SHA-256 `e316079f01cbcb2a2f4b37d0be732b198587b9c36ca7a5abe5b4cb9ded428a24`, vectors `c618527719c7a54790b051a632a2093e697499596742fe5028f94b149e85bd6f`. map my-reports 사본은 수정하지 않았다.
+- 인증된 버전 probe의 실제 서버 major >=3 및 최상위 protocol 지원 필드를 매 실제 요청 전에 검사. 4자리/dev/product 1.x를 올바르게 처리. 연결 테스트는 실제 상태 API·동의 게이트까지 확인. 409 호환 거부는 알람을 중단하고 수동 연결 테스트로 재개. 기존 구현처럼 REST만 사용하며 WS/4406 경로는 없음.
+- 필수 host permission은 Supabase origin 하나, selfhost는 optional HTTP/HTTPS 선언에서 입력 origin 하나만 요청. 알림도 선택 권한. CSP 변경 없음. DTO를 worker에서 투영하고 원문 오류는 코드 allowlist로만 전달한다.
+- 기존 디자인 토큰·13~16px 글자·결과/처분 색상·closed Shadow DOM·원본 입력/클릭 전파 유지. worker 재시작은 열린 패널을 닫지 않고 캐시를 버려 재조회한다.
+
+자동 검증:
+- `npm test`: 34개 통과 (Node 22, 실제 Chrome UI fixture 테스트 포함).
+- `npm run test:contracts`: 10개 통과. map MANIFEST, PC 계약 스냅샷 및 공유 벡터, 헤더/오류/DTO 검사.
+- worker/adapter: 신규·legacy 서버만·cloud 세션만·양쪽·명시 모드·재시작, selfhost→cloud→selfhost의 늦은 응답·서버/계정 변경, 중복 poll/알림/배지, 업데이트 거부 지속 중단, 오프라인 로그아웃을 검사했다.
+- 실제 Supabase JS SDK + mock HTTP로 만료 세션·모드 왕복 중 refresh를 검사. selfhost의 cloud 요청 0건, cloud의 자기 서버 요청 0건. 갱신을 중단한 뒤 SDK가 내부 재시도를 마칠 때까지 기다려 실제 추가 네트워크 0건과 토큰 보존을 확인했다.
+- `npm run build`: 제품 1.2.0, 기본 selfhost 가능 / cloud 공개 설정 없는 빌드 통과.
+
+별도 실제 브라우저 검증:
+- `SR_CHROMIUM_PATH=/home/better0101/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome npm run test:backend-browser`: Chromium 153.0.8010.12 unpacked 확장, 실제 service worker와 closed Shadow DOM content script, 로컬 mock 서버로 통과.
+- 옵션·팝업·차량/주소 패널, 라이트/다크, 서버 키 마스킹, 실제 번호 복사, 서버 크롤링 시작/중지, 모드 변경 뒤 서버 요청 0건, node 교체·tab 전환·blur/focus·Alt-Tab 키 조합·클릭 버튼 release 뒤 패널 유지, 원래 페이지 click/input 이벤트 전달을 검사했다.
+- 새 설치와 legacy/cloud/양쪽/명시 선택의 cold-start 마이그레이션을 각각 브라우저 프로필에 저장한 후 재시작해 확인. CDP로 worker를 실제 중단한 뒤 전역 marker 소멸 및 첫 검색 정상 유지를 확인. 서버 2.x·protocol 미지원·401·오프라인 안내를 구분했다.
+- `npm run test:action-popup`: 실제 action popup 460px, 단일 스크롤·footer/viewport 경계 통과.
+- 캡처와 결과는 `artifacts/backend-browser/`, 기존 cloud fixture 캡처는 `artifacts/ui-review/`. 이미지의 폰트·상태톤·마스킹·모드별 메뉴를 별도로 검수했다.
+
+검증 한계:
+- 실제 카카오 OAuth, 운영 Supabase/my-reports/PC 서버, 실데이터 A/B 권한, 로그인된 안전신문고 원문 링크의 실제 열람은 검증하지 않았다. SDK·mock·브라우저 통과와 구분한다.
+- 실제 OS 창 전환 Alt-Tab은 headless 환경에서 미검증. 키 조합·실제 브라우저 tab 이동·blur/focus 회귀를 검사했다.
+- 브라우저 테스트 사본 manifest에 해당 mock origin/알림만 미리 허용했다. 운영 설치의 Chrome 권한 허용 다이얼로그는 미검증.
+- 다른 저장소 코드는 변경하지 않았다. 사용자 후속 지시로 PC 저장소에 `pull --ff-only`만 수행했으며 로컬 수정은 보존했다. 운영 설정은 변경하지 않았다.
+
+---
+
 ## 2026-09-30 · my-reports-v1 계약으로 전환
 
 - map 정본 계약 `contracts/my-reports/`(v1)를 사본으로 추가하고 MANIFEST 검사 테스트를 둔다.
