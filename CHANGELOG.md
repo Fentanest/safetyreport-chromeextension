@@ -7,6 +7,14 @@
 
 ---
 
+## 2026-10-03 · 1.1.0 제품 버전 표기 확정 및 dev 병합
+
+- 사용자 지시에 따라 `VERSION`, source manifest, 현재 구조 문서의 제품 버전을 1.1.0으로 통일했다. 아래 작업 기록의 1.2.0~1.2.2는 미배포 로컬 작업 당시의 임시 표기이며 최종 배포 버전이 아니다. 셀프호스팅·클라우드 구현, 수정 사항과 빌드·릴리스 workflow는 보존한다.
+- origin/dev를 fetch하여 로컬 dev와 동일한 `b0127dc`임을 확인했다. 버전 정정 커밋과 기존 작업 커밋을 로컬 dev에 병합하고 병합된 feature 브랜치를 삭제한다. 추가 worktree는 없으며 현재 저장소 폴더와 브라우저 검증 기록은 유지한다. 원격 push·Release 실행·스토어 제출은 하지 않는다.
+- 검증: `npm test` 52개·계약 테스트 10개 통과. 기본 selfhost 빌드 후 VERSION/source/build manifest가 모두 1.1.0임을 확인했다. 별도 unpacked Chromium의 실제 action popup 검사도 460×510·footer 509·가로 overflow 없음으로 통과했다. 클라우드 mock 공개 설정의 빌드·ZIP 검사는 통합 테스트로 검증했으며 실제 운영 로그인을 수행하지 않았다.
+
+---
+
 ## 2026-10-03 · VERSION 기반 GitHub 빌드·릴리스 workflow
 
 - `.github/workflows/build.yml`을 `main` push 또는 dev/main 수동 실행의 빌드·릴리스 workflow로 갱신했다. safetyreport의 기존 흐름을 참고했으며 `[self-hosted, Linux, X64, "235"]` 러너만 사용한다. GitHub API 읽기로 확장 저장소에도 `235` 라벨 러너가 등록되어 있음을 확인했고 러너 서비스·다른 저장소는 변경하지 않았다.

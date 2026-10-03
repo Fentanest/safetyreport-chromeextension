@@ -10,7 +10,7 @@ test('release version accepts product versions and rejects invalid Chrome/tag va
   const dir = await mkdtemp(join(tmpdir(), 'sr-version-'));
   const path = join(dir, 'VERSION');
   try {
-    for (const version of ['1.2.2', '3.0.0.0', '0.0.1', '65535.65535.65535.65535']) {
+    for (const version of ['1.1.0', '3.0.0.0', '0.0.1', '65535.65535.65535.65535']) {
       await writeFile(path, ` ${version}\n`);
       assert.equal(await readVersion(path), version);
     }
