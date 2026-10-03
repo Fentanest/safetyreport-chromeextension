@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { worker, session, authKey, SUPA } from './worker-harness.mjs';
 const fixture = name => JSON.parse(readFileSync(`contracts/my-reports/fixtures/${name}.json`,'utf8'));
@@ -79,16 +80,59 @@ test('worker: selfhost bypasses cloud auth/expiry, slow responses cannot survive
   assert.equal(app.calls.filter(c=>c.auth).length,0);
 });
 test('worker: polling dedupes, persistent transitions restore, notifications and badges stop in cloud',async()=>{
-  let running=false;
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config,[authKey]:session('a')},fetchImpl:async(url)=>url.endsWith('/crawl/status')?new Response(JSON.stringify({status:'success',running,pending:0})):mockSelfhost(url)});
+  let running=false, done=false;
+  const app=await worker({local:{backendMode:'selfhost',selfhost:config,[authKey]:session('a')},fetchImpl:async(url)=>{
+    if(url.endsWith('/crawl/status'))return new Response(JSON.stringify({status:'success',running,pending:0}));
+    if(url.endsWith('/crawl/done/ext')){const available=done;done=false;return available?mockSelfhost(url):Response.json({status:'success',done:false});}
+    return mockSelfhost(url);
+  }});
   const poll=()=>app.chrome.alarms.onAlarm.emit({name:'safetyreport_poll'});
   poll();poll();await new Promise(r=>setTimeout(r,30));
   assert.equal(app.calls.filter(c=>c.url?.endsWith('/crawl/status')).length,1);assert.equal(app.notices.size,0);
   assert.equal(app.badges.at(-1),'1');assert.equal(app.stores.local.srCrawlState.running,false);
   running=true;poll();await new Promise(r=>setTimeout(r,30));assert.equal(app.notices.size,1);
-  running=false;poll();await new Promise(r=>setTimeout(r,30));assert.ok([...app.notices.values()].some(x=>x.message.includes('신규 중복군')));
+  running=false;done=true;poll();await new Promise(r=>setTimeout(r,30));assert.ok([...app.notices.values()].some(x=>x.message.includes('신규 중복군')));
   await app.send({type:'SET_MODE',backendMode:'cloud'});const count=app.calls.filter(c=>c.url).length;
   poll();await new Promise(r=>setTimeout(r,20));assert.equal(app.calls.filter(c=>c.url).length,count);assert.equal(app.notices.size,0);assert.equal(app.badges.at(-1),'');
+});
+test('worker: a crawl completed between alarms is consumed once; disabled notifications never consume it',async()=>{
+  let done=false;
+  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:async url=>{
+    if(url.endsWith('/crawl/done/ext')){const available=done;done=false;return available?mockSelfhost(url):Response.json({status:'success',done:false});}
+    return mockSelfhost(url);
+  }});
+  const poll=()=>vm.runInContext('pollCrawlStatus()',app.context);
+  await poll();assert.equal(app.notices.size,0);
+  done=true;await Promise.all([poll(),poll()]);
+  assert.equal(app.notices.size,1);assert.ok([...app.notices.values()][0].title.startsWith('크롤링 완료'));
+  const notice=[...app.notices.values()][0];await poll();assert.equal([...app.notices.values()][0],notice);
+  assert.equal(app.calls.filter(c=>c.url?.endsWith('/crawl/done/ext')).length,3);
+  done=true;app.chrome.permissions.contains=async request=>!request.permissions?.includes('notifications');
+  await poll();assert.equal(done,true);
+  await app.send({type:'SAVE_SERVER',...config,notifyCrawlDone:false});app.chrome.permissions.contains=async()=>true;
+  await poll();assert.equal(done,true);
+  await app.send({type:'SET_MODE',backendMode:'cloud'});const calls=app.calls.length;await poll();assert.equal(app.calls.length,calls);
+});
+test('worker: restart restores only the last successful badge for the same server credential',async()=>{
+  const app=await worker({local:{backendMode:'selfhost',selfhost:{...config,notifyCrawlDone:false}},fetchImpl:mockSelfhost});
+  await vm.runInContext('pollCrawlStatus()',app.context);assert.equal(app.badges.at(-1),'1');
+  const restarted=await worker({local:app.stores.local,fetchImpl:mockSelfhost});
+  assert.equal(restarted.badges.at(-1),'1');assert.equal(restarted.calls.filter(c=>c.url).length,0);
+  for(const local of [
+    {...app.stores.local,backendMode:'cloud'},
+    {...app.stores.local,selfhost:{...config,apiKey:'different-key'}},
+    {...app.stores.local,selfhost:{...config,serverUrl:'http://localhost:6820'}},
+    {...app.stores.local,selfhostBlocked:'CLIENT_PROTOCOL_UNSUPPORTED'},
+  ]){const changed=await worker({local,fetchImpl:mockSelfhost});assert.equal(changed.badges.at(-1),'');}
+});
+test('worker: failed polling clears the durable badge so a restart cannot restore a stale count',async()=>{
+  let offline=false;
+  const app=await worker({local:{backendMode:'selfhost',selfhost:{...config,notifyCrawlDone:false}},fetchImpl:async url=>{
+    if(offline)throw new TypeError('offline');return mockSelfhost(url);
+  }});
+  await vm.runInContext('pollCrawlStatus()',app.context);assert.equal(app.badges.at(-1),'1');
+  offline=true;await vm.runInContext('pollCrawlStatus()',app.context);assert.equal(app.badges.at(-1),'');
+  const restarted=await worker({local:app.stores.local,fetchImpl:mockSelfhost});assert.equal(restarted.badges.at(-1),'');
 });
 test('worker: HTTP 409 disables periodic retries across restart until an explicit probe succeeds',async()=>{
   let rejected=true;

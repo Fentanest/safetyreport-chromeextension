@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "나만의 안전신문고",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "개인 safetyreport 서버 또는 클라우드에서 내 신고 조회",
   "permissions": [
     "storage",

@@ -43,7 +43,27 @@ const ready = (async () => {
   await resetAlarm();
   initialized = true;
   clearCache(true, 'WORKER_RESTARTED');
+  await restoreBadge();
 })();
+
+async function selfhostIdentity(config) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.apiKey));
+  const fingerprint = [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('');
+  return JSON.stringify([config.serverUrl, fingerprint]);
+}
+async function restoreBadge() {
+  // Restore only the last successful count for this server and credential.
+  // A worker wake does not need an extra poll or an inactive cloud connection.
+  const epoch = generation, config = settings.selfhost;
+  if (settings.backendMode !== 'selfhost' || !config.serverUrl || !config.apiKey) return;
+  const identity = await selfhostIdentity(config);
+  const stored = await chrome.storage.local.get(['srCrawlState', 'selfhostBlocked']);
+  const count = stored.srCrawlState?.identity === identity ? stored.srCrawlState.processingCount : null;
+  if (epoch !== generation || stored.selfhostBlocked || !Number.isInteger(count) || count < 0) return;
+  await chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
+  await chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
+  if (epoch !== generation) await chrome.action.setBadgeText({ text: '' });
+}
 
 function cloudClient() {
   if (!configured) throw new Error('NOT_CONFIGURED');
@@ -367,37 +387,53 @@ async function pollCrawlStatus() {
   pollFlight = (async () => {
     try {
       // Credential fingerprint namespaces persistent transitions without retaining keys in state.
-      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.apiKey));
-      const fingerprint = [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('');
-      const identity = JSON.stringify([config.serverUrl, fingerprint]);
+      const identity = await selfhostIdentity(config);
       const previous = (await chrome.storage.local.get('srCrawlState')).srCrawlState;
       const crawl = await selfhost('crawl-status');
       if (epoch !== generation) return;
-      if (previous?.identity === identity && previous.running !== crawl.running && config.notifyCrawlDone &&
+      if (config.notifyCrawlDone &&
           await chrome.permissions.contains({ permissions: ['notifications'] })) {
-        const done = crawl.running ? null : await selfhost('crawl-done');
+        // /done/ext is a consumable completion record. Poll it independently
+        // of running transitions so a short crawl between alarms is not lost.
+        const done = await selfhost('crawl-done');
         if (epoch !== generation) return;
-        const lines = done?.changes.slice(0, 3).map(row => row.notification_kind === 'duplicate'
-          ? [`[중복] ${{ group_added: '신규 중복군', members_changed: '멤버 변경', representative_changed: '대표건 변경' }[row.duplicate_change_type] || '중복 변경'}`, row.status_label,
-            row.member_count === null ? '' : `${row.member_count}건`, row.representative_report_number ? '대표 ' + row.representative_report_number : ''].filter(Boolean).join(' · ')
-          : [row.report_number ? `[${row.report_number}]` : '', row.report_title || '신고 변경'].filter(Boolean).join(' ')) || [];
-        if (done?.changes.length > 3) lines.push(`외 ${done.changes.length - 3}건`);
-        const duplicateCount = done?.changes.filter(row => row.notification_kind === 'duplicate').length || 0;
-        const reportCount = (done?.changes.length || 0) - duplicateCount;
-        const counts = duplicateCount ? ` (신고 ${reportCount}건, 중복 ${duplicateCount}건)` : done?.changed_count > 0 ? ` (${done.changed_count}건)` : '';
-        await chrome.notifications.create(`sr-crawl-${epoch}`, { type: 'basic', iconUrl: 'icons/icon48.png',
-          title: crawl.running ? '크롤링 시작' : `크롤링 완료${counts}`,
-          message: lines.length ? lines.join('\n') : crawl.running ? '서버에서 크롤링을 시작했습니다.' : '서버 크롤링이 완료되었습니다.' });
-        if (epoch !== generation) { await chrome.notifications.clear(`sr-crawl-${epoch}`); return; }
+        if (done.done) {
+          const lines = done?.changes.slice(0, 3).map(row => row.notification_kind === 'duplicate'
+            ? [`[중복] ${{ group_added: '신규 중복군', members_changed: '멤버 변경', representative_changed: '대표건 변경' }[row.duplicate_change_type] || '중복 변경'}`, row.status_label,
+              row.member_count === null ? '' : `${row.member_count}건`, row.representative_report_number ? '대표 ' + row.representative_report_number : ''].filter(Boolean).join(' · ')
+            : [row.report_number ? `[${row.report_number}]` : '', row.report_title || '신고 변경'].filter(Boolean).join(' ')) || [];
+          if (done?.changes.length > 3) lines.push(`외 ${done.changes.length - 3}건`);
+          const duplicateCount = done?.changes.filter(row => row.notification_kind === 'duplicate').length || 0;
+          const reportCount = (done?.changes.length || 0) - duplicateCount;
+          const counts = duplicateCount ? ` (신고 ${reportCount}건, 중복 ${duplicateCount}건)` : done?.changed_count > 0 ? ` (${done.changed_count}건)` : '';
+          await chrome.notifications.create(`sr-crawl-done-${epoch}`, { type: 'basic', iconUrl: 'icons/icon48.png',
+            title: `크롤링 완료${counts}`,
+            message: lines.length ? lines.join('\n') : '서버 크롤링이 완료되었습니다.' });
+          if (epoch !== generation) { await chrome.notifications.clear(`sr-crawl-done-${epoch}`); return; }
+        }
+        if (previous?.identity === identity && !previous.running && crawl.running) {
+          await chrome.notifications.create(`sr-crawl-start-${epoch}`, { type: 'basic', iconUrl: 'icons/icon48.png',
+            title: '크롤링 시작', message: '서버에서 크롤링을 시작했습니다.' });
+          if (epoch !== generation) { await chrome.notifications.clear(`sr-crawl-start-${epoch}`); return; }
+        }
       }
       if (epoch !== generation) return;
       await chrome.storage.local.set({ srCrawlState: { identity, running: crawl.running } });
       const summary = await selfhost('summary', { fresh: true });
       if (epoch !== generation) return;
-      await chrome.action.setBadgeText({ text: summary.stats.processingCount > 0 ? String(summary.stats.processingCount) : '' });
+      const count = summary.stats.processingCount;
+      await chrome.storage.local.set({ srCrawlState: { identity, running: crawl.running,
+        ...(Number.isInteger(count) && count >= 0 ? { processingCount: count } : {}) } });
+      if (epoch !== generation) return;
+      await chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
       await chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
       if (epoch !== generation) await chrome.action.setBadgeText({ text: '' });
-    } catch { if (epoch === generation) await chrome.action.setBadgeText({ text: '' }); }
+    } catch {
+      if (epoch !== generation) return;
+      await chrome.action.setBadgeText({ text: '' });
+      const stored = (await chrome.storage.local.get('srCrawlState')).srCrawlState;
+      if (epoch === generation && stored) await chrome.storage.local.set({ srCrawlState: { ...stored, processingCount: null } });
+    }
   })().finally(() => { pollFlight = null; });
   return pollFlight;
 }
