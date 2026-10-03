@@ -7,6 +7,18 @@
 
 ---
 
+## 2026-10-03 · VERSION 기반 GitHub 빌드·릴리스 workflow
+
+- `.github/workflows/build.yml`을 `main` push 또는 dev/main 수동 실행의 빌드·릴리스 workflow로 갱신했다. safetyreport의 기존 흐름을 참고했으며 `[self-hosted, Linux, X64, "235"]` 러너만 사용한다. GitHub API 읽기로 확장 저장소에도 `235` 라벨 러너가 등록되어 있음을 확인했고 러너 서비스·다른 저장소는 변경하지 않았다.
+- `VERSION`을 검증해 빌드 manifest·`v<VERSION>` 태그·버전별 ZIP을 맞춘다. 빌드는 실행 커밋 SHA를 checkout하고, 기존 태그가 다른 커밋을 가리키면 중단한다. 같은 커밋 재실행의 릴리스 자산 업로드를 허용하고 릴리스 workflow의 동시 실행을 제한한다.
+- GitHub Variables의 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`를 필수로 확인하고 빌드에 주입한다. Node 22·프로젝트에 고정된 Playwright Chromium을 준비해 테스트와 계약 검사를 실행한 후 정확한 버전 ZIP만 artifact와 GitHub Release에 올린다. 브라우저 준비는 시스템 패키지를 설치하지 않으며 공용 캐시의 다른 브라우저를 자동 정리하지 않도록 설정했다.
+- 패키징은 VERSION과 다른 오래된 빌드를 거부한다. 기존 ZIP을 먼저 제거하여 같은 이름으로 다시 패키징할 때 삭제된 파일이 남지 않게 했다. 공개 설정 없는 로컬 selfhost 빌드는 계속 허용하며 릴리스 패키징은 거부한다. 제품 버전은 1.2.2를 유지한다.
+- 검증: `npm test` 52개·계약 테스트 10개 통과. 실제 configured 빌드/ZIP 통합 검사는 source manifest와 다른 VERSION 적용, 번들의 mock 공개 설정과 정확한 host permission, ZIP 루트 manifest, 삭제 파일 미포함, 오래된 버전·미설정 빌드 거부를 확인했다. CI와 같은 Chromium 140.0.7339.186 및 CHROME_PATH로 52개 테스트도 통과했다.
+- actionlint 1.7.12 통과(사용자 정의 `235` 라벨 진단만 제외). 모든 run step의 bash 문법, VERSION outputs, 태그 없음·동일/다른 커밋·annotated tag의 충돌 검사를 임시 저장소에서 실행하여 통과했다. README·CLAUDE에 실행·설치·러너 준비 방법을 기록했다.
+- 실제 GitHub Actions 실행·태그 생성·Release 게시·push·스토어 제출은 하지 않았다. workflow와 스크립트만 로컬 커밋으로 정리한다.
+
+---
+
 ## 2026-10-03 · 1.2.2 안전신문고 HTTP/HTTPS 페이지 범위와 클라우드 접근 권한 확인
 
 - 기존 HTTPS에 더해 `http://www.safetyreport.go.kr/*`를 content script와 Shadow DOM 스타일 WAR의 정확한 주입 범위에 추가했다. worker는 같은 정확한 HTTP/HTTPS www 호스트의 최상위 페이지·확장 ID만 content 역할로 허용한다. content에는 조회/번호/상태만 허용하며 설정·로그인·크롤링 제어는 계속 거부한다.

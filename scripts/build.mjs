@@ -1,7 +1,9 @@
 import { build } from 'esbuild';
 import { mkdir, copyFile, readFile, writeFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { readVersion } from './version.mjs';
 
+const version = await readVersion();
 const url = (process.env.SR_SUPABASE_URL || '').replace(/\/+$/, '');
 const key = process.env.SR_SUPABASE_PUBLISHABLE_KEY || '';
 if ((url || key) && (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url) || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(key))) {
@@ -12,6 +14,7 @@ await rm(out, { recursive: true, force: true });
 await mkdir(resolve(out, 'icons'), { recursive: true });
 await mkdir(resolve(out, 'assets'), { recursive: true });
 const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
+manifest.version = version;
 manifest.host_permissions = url ? [`${url}/*`] : [];
 manifest.description = '개인 safetyreport 서버 또는 클라우드에서 내 신고 조회';
 manifest.permissions = ['storage', 'identity', 'clipboardWrite', 'alarms'];
