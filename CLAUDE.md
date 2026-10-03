@@ -16,6 +16,6 @@
 - 안전신문고 페이지 범위: content_scripts와 Shadow DOM 스타일 WAR는 `http://www.safetyreport.go.kr/*`, `https://www.safetyreport.go.kr/*`에만 적용한다. worker content 역할도 같은 HTTP/HTTPS 정확 호스트의 top frame + 확장 ID만 허용한다. 다른 호스트·유사 도메인·하위 frame은 거부한다.
 - host permission: 필수는 빌드한 Supabase origin만, optional HTTP/HTTPS 범위에서 사용자가 입력한 서버 origin만 클릭 시 요청. 전체 host grant와 CSP 완화 금지. 테스트 manifest의 exact mock origin 사전 허용을 실제 권한 다이얼로그 검증으로 부르지 않는다.
 - 검증: `npm test`, `npm run test:contracts`, 빌드 후 `SR_CHROMIUM_PATH=... npm run test:backend-browser`, `npm run test:action-popup`. browser artifact는 `artifacts/backend-browser/`에 생성한다.
-- 빌드·릴리스: `scripts/version.mjs`가 `VERSION`의 제품 버전을 검증하고 build manifest·ZIP·태그에 사용한다. `.github/workflows/build.yml`은 main push 또는 dev/main 수동 실행, `[self-hosted, Linux, X64, "235"]`, 공개 Supabase Variables 필수, 테스트·계약 검사 후 ZIP을 GitHub Release에 첨부한다. 다른 커밋의 기존 태그는 거부한다. workflow 작성과 실제 원격 실행·push·스토어 제출을 구분한다.
+- 빌드·릴리스: `scripts/version.mjs`가 `VERSION`의 제품 버전을 검증하고 build manifest·ZIP·태그에 사용한다. `.github/workflows/build.yml`은 dev/main 수동 실행만 허용하며 push 트리거가 없다. `[self-hosted, Linux, X64, "235"]`, 공개 Supabase Variables 필수, 테스트·계약 검사 후 두 브랜치의 ZIP artifact를 1일 보관한다. dev는 태그·Release를 생성하지 않는다. main은 검증된 artifact를 받아 실행 커밋의 태그·GitHub Release·자동 릴리스 노트를 생성한다. main 릴리스 작업에만 쓰기 권한을 부여하고 다른 커밋의 기존 태그는 거부한다. workflow 작성과 실제 원격 실행·push·스토어 제출을 구분한다.
 
 안전신문고 링크의 실제 원문 열람, 운영 카카오 로그인·실데이터 A/B 권한·운영 서버, OS Alt-Tab은 별도 검증한다. 로컬 mock/SDK/Chromium 검증을 운영 검증이라고 부르지 않는다. 다른 저장소·운영 설정·배포·스토어·push를 이 작업으로 변경하지 않는다.

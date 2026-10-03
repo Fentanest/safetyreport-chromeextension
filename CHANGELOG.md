@@ -7,6 +7,17 @@
 
 ---
 
+## 2026-10-03 · main 수동 릴리스와 dev artifact 빌드 분리
+
+- safetyreport 빌드·릴리스 흐름을 참고해 `.github/workflows/build.yml`의 main push 트리거를 제거했다. dev/main의 `workflow_dispatch`만 빌드하며 다른 브랜치·태그는 실행 대상에서 제외한다.
+- 빌드 작업은 읽기 권한으로 테스트·계약 검사·공개 설정 빌드·ZIP 패키징을 실행하고, 브랜치·버전·실행 ID·재실행 번호가 포함된 artifact를 1일 보관한다. dev는 태그·Release를 생성하지 않으며 기존 릴리스 태그에 영향을 받지 않는다.
+- main 전용 릴리스 작업에만 쓰기 권한을 부여했다. 검증된 artifact를 내려받아 실행 커밋의 `v<VERSION>` 태그·Release·ZIP 첨부·자동 릴리스 노트를 생성한다. 다른 커밋의 기존 태그는 거부하고 같은 브랜치의 실행은 직렬화한다. Release 첨부 ZIP은 artifact의 1일 보관 기간과 별도로 유지한다.
+- README·CLAUDE의 실행 방법과 권한·보관 안내를 갱신했다. VERSION과 제품 코드는 변경하지 않았다.
+- 검증: CI와 같은 Chromium 140/CHROME_PATH로 `npm test` 52개, 계약 테스트 10개 통과. configured 빌드·ZIP 통합 검사도 포함한다. actionlint 1.7.12 통과(사용자 정의 `235` 라벨 진단만 제외). 모든 run step의 bash 문법, 이벤트·브랜치별 실행 조건, 권한·보관 기간·릴리스 설정, dev/main 메타데이터를 검사했고 임시 Git 저장소에서 태그 없음·동일 커밋·annotated tag·다른 커밋 충돌을 실행 검증했다.
+- 실제 GitHub Actions 실행·원격 push·태그 생성·Release 게시·스토어 제출은 수행하지 않았다.
+
+---
+
 ## 2026-10-03 · 1.1.0 제품 버전 표기 확정 및 dev 병합
 
 - 사용자 지시에 따라 `VERSION`, source manifest, 현재 구조 문서의 제품 버전을 1.1.0으로 통일했다. 아래 작업 기록의 1.2.0~1.2.2는 미배포 로컬 작업 당시의 임시 표기이며 최종 배포 버전이 아니다. 셀프호스팅·클라우드 구현, 수정 사항과 빌드·릴리스 workflow는 보존한다.

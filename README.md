@@ -50,11 +50,13 @@ GitHub Actions는 같은 이름의 저장소 Variables `SR_SUPABASE_URL`, `SR_SU
 
 ### GitHub 빌드·릴리스
 
-`.github/workflows/build.yml`은 `main` push 또는 Actions의 **Build & Release Chrome extension → Run workflow**로 실행합니다. 수동 실행은 `dev`·`main`만 허용합니다. Linux x64 셀프호스트 러너의 라벨은 `self-hosted`, `Linux`, `X64`, `235`입니다. 러너 서비스는 직접 실행하며 이 workflow는 서비스를 설치하거나 시작하지 않습니다. Node 24 기반 Actions를 실행할 수 있는 최신 러너, `zip`·`unzip`, Chromium 실행용 Linux 라이브러리가 필요합니다. Node.js 22와 테스트용 Chromium은 workflow에서 준비하며 `sudo`로 시스템 패키지를 설치하지 않습니다.
+`.github/workflows/build.yml`은 Actions의 **Build & Release Chrome extension → Run workflow**에서 `dev` 또는 `main`을 선택해 수동으로만 실행합니다. push로는 실행하지 않습니다. Actions에서 수동 실행하려면 workflow 파일이 기본 브랜치에도 있어야 합니다. Linux x64 셀프호스트 러너의 라벨은 `self-hosted`, `Linux`, `X64`, `235`입니다. 러너 서비스는 직접 실행하며 이 workflow는 서비스를 설치하거나 시작하지 않습니다. Node 24 기반 Actions를 실행할 수 있는 최신 러너, `zip`·`unzip`, Chromium 실행용 Linux 라이브러리가 필요합니다. Node.js 22와 테스트용 Chromium은 workflow에서 준비하며 `sudo`로 시스템 패키지를 설치하지 않습니다.
 
-`VERSION`을 정본으로 읽어 `build/manifest.json` 버전, `v<VERSION>` 릴리스 태그, `safetyreport-extension-<VERSION>.zip` 파일명을 맞춥니다. `python3 set_version.py <버전>`으로 소스 manifest와 함께 갱신할 수도 있습니다. 테스트·계약 검사와 공개 설정을 포함한 빌드·패키징이 성공하면 해당 실행 커밋에 GitHub Release를 게시하고 ZIP을 첨부합니다. ZIP을 풀어 `manifest.json`이 있는 폴더를 로드하세요. GitHub의 자동 **Source code** ZIP에는 빌드 결과가 없습니다.
+`VERSION`을 정본으로 읽어 `build/manifest.json` 버전, `v<VERSION>` 릴리스 태그, `safetyreport-extension-<VERSION>.zip` 파일명을 맞춥니다. `python3 set_version.py <버전>`으로 소스 manifest와 함께 갱신할 수도 있습니다. 두 브랜치 모두 테스트·계약 검사와 공개 설정을 포함한 빌드·패키징을 실행합니다. `dev`는 ZIP을 artifact에만 업로드하고 태그·Release를 생성하지 않습니다. `main`은 검증된 artifact를 내려받아 해당 실행 커밋에 `v<VERSION>` 태그와 GitHub Release를 생성하고 ZIP을 첨부합니다. 릴리스 본문에는 버전·커밋·설치 방법과 GitHub가 자동 생성한 변경 내역을 포함합니다. ZIP을 풀어 `manifest.json`이 있는 폴더를 로드하세요. GitHub의 자동 **Source code** ZIP에는 빌드 결과가 없습니다.
 
-릴리스에는 두 Supabase Variables가 모두 필요하며 없으면 중단합니다. 기존 버전 태그가 다른 커밋을 가리키면 릴리스하지 않으므로 코드가 바뀌면 `VERSION`을 올려야 합니다. 같은 커밋의 재실행은 해당 릴리스에 ZIP을 다시 첨부할 수 있습니다. 동시 릴리스는 직렬로 실행하고 실행 중인 작업을 취소하지 않습니다. GitHub Release는 Chrome 웹 스토어 제출과 별개입니다.
+두 브랜치의 artifact는 `safetyreport-extension-<브랜치>-<VERSION>-<실행 ID>-<재실행 번호>` 이름으로 **1일** 보관합니다. 이 보관 기간은 Actions artifact에 적용하며 GitHub Release의 첨부 ZIP은 유지됩니다.
+
+두 브랜치의 빌드에는 두 Supabase Variables가 모두 필요하며 없으면 중단합니다. `main`은 기존 버전 태그가 다른 커밋을 가리키면 릴리스하지 않으므로 코드가 바뀌면 `VERSION`을 올려야 합니다. 같은 커밋의 재실행은 해당 릴리스에 ZIP을 다시 첨부할 수 있습니다. `dev`는 기존 릴리스 태그와 관계없이 빌드합니다. 같은 브랜치의 실행은 직렬로 처리하고 실행 중인 작업을 취소하지 않습니다. 빌드 작업은 읽기 권한만 사용하며 main 릴리스 작업에만 `contents: write`를 부여합니다. GitHub Release는 Chrome 웹 스토어 제출과 별개입니다.
 
 `npm run test:contracts`는 map 정본 my-reports 사본의 MANIFEST와 PC 정본 selfhost-compat 사본·테스트 벡터를 검사합니다. 정본 사본을 임의로 수정하지 않습니다. my-reports 갱신은 map의 `scripts/integration/sync_contract_copy.py --contract my-reports --to <확장 레포>`를 사용합니다. selfhost-compat는 PC `contracts/selfhost-compat/`에서 파일을 그대로 복사하고 스냅샷 해시를 검사합니다.
 
