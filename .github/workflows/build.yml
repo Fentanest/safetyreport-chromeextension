@@ -1,4 +1,4 @@
-name: Build Chrome extension
+name: Build & Release Chrome extension
 
 on:
   workflow_dispatch:
@@ -6,41 +6,148 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, "235"]
+    if: github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    runs-on: [self-hosted, Linux, X64, "235"]
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      asset: ${{ steps.release.outputs.asset }}
+      artifact: ${{ steps.release.outputs.artifact }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out selected branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
+      - name: Read build metadata from VERSION
+        id: release
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from 'node:fs/promises';
+          import { readVersion } from './scripts/version.mjs';
+          const version = await readVersion();
+          await appendFile(process.env.GITHUB_OUTPUT,
+            `version=${version}\ntag=v${version}\nasset=artifacts/safetyreport-extension-${version}.zip\n` +
+            `artifact=safetyreport-extension-${process.env.GITHUB_REF_NAME}-${version}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}\n`);
+          console.log(`Build version: ${version}`);
+          NODE
+
+      - name: Require cloud public build settings
+        env:
+          SR_SUPABASE_URL: ${{ vars.SR_SUPABASE_URL }}
+          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SR_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [[ -z "$SR_SUPABASE_URL" || -z "$SR_SUPABASE_PUBLISHABLE_KEY" ]]; then
+            echo "::error::저장소 Variables에 SR_SUPABASE_URL과 SR_SUPABASE_PUBLISHABLE_KEY가 필요합니다."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
+      - name: Install test browser
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_GC: '1'
+        run: |
+          npx playwright-core install chromium --no-shell
+          node --input-type=module <<'NODE'
+          import { appendFile } from 'node:fs/promises';
+          import { chromium } from 'playwright-core';
+          await appendFile(process.env.GITHUB_ENV, `CHROME_PATH=${chromium.executablePath()}\n`);
+          NODE
+
       - name: Run tests
         run: npm test
+
+      - name: Run contract tests
+        run: npm run test:contracts
 
       - name: Build configured extension
         run: npm run build
         env:
           SR_SUPABASE_URL: ${{ vars.SR_SUPABASE_URL }}
-          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
+          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SR_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Package extension
         run: npm run package
 
       - name: Upload extension ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: safetyreport-extension-${{ github.sha }}
-          path: artifacts/safetyreport-extension-*.zip
+          name: ${{ steps.release.outputs.artifact }}
+          path: ${{ steps.release.outputs.asset }}
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, "235"]
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out release commit and tags
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prevent releasing different code under an existing tag
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            tag_commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::이 버전 태그는 다른 커밋에 사용되었습니다. VERSION을 올린 뒤 실행하세요."
+              exit 1
+            fi
+          fi
+
+      - name: Download tested extension ZIP
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: 나만의 안전신문고 Chrome 확장 v${{ needs.build.outputs.version }}
+          body: |
+            VERSION: ${{ needs.build.outputs.version }}
+            Commit: ${{ github.sha }}
+
+            첨부 ZIP을 풀고 chrome://extensions → 개발자 모드 → 압축해제된 확장 프로그램을 로드합니다.
+            manifest.json이 있는 폴더를 선택하세요. 클라우드 공개 설정은 빌드에 포함되어 있습니다.
+          files: ${{ needs.build.outputs.asset }}
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+          generate_release_notes: true

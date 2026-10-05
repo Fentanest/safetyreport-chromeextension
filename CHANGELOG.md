@@ -7,6 +7,118 @@
 
 ---
 
+## 2026-10-03 · main 수동 릴리스와 dev artifact 빌드 분리
+
+- safetyreport 빌드·릴리스 흐름을 참고해 `.github/workflows/build.yml`의 main push 트리거를 제거했다. dev/main의 `workflow_dispatch`만 빌드하며 다른 브랜치·태그는 실행 대상에서 제외한다.
+- 빌드 작업은 읽기 권한으로 테스트·계약 검사·공개 설정 빌드·ZIP 패키징을 실행하고, 브랜치·버전·실행 ID·재실행 번호가 포함된 artifact를 1일 보관한다. dev는 태그·Release를 생성하지 않으며 기존 릴리스 태그에 영향을 받지 않는다.
+- main 전용 릴리스 작업에만 쓰기 권한을 부여했다. 검증된 artifact를 내려받아 실행 커밋의 `v<VERSION>` 태그·Release·ZIP 첨부·자동 릴리스 노트를 생성한다. 다른 커밋의 기존 태그는 거부하고 같은 브랜치의 실행은 직렬화한다. Release 첨부 ZIP은 artifact의 1일 보관 기간과 별도로 유지한다.
+- README·CLAUDE의 실행 방법과 권한·보관 안내를 갱신했다. VERSION과 제품 코드는 변경하지 않았다.
+- 검증: CI와 같은 Chromium 140/CHROME_PATH로 `npm test` 52개, 계약 테스트 10개 통과. configured 빌드·ZIP 통합 검사도 포함한다. actionlint 1.7.12 통과(사용자 정의 `235` 라벨 진단만 제외). 모든 run step의 bash 문법, 이벤트·브랜치별 실행 조건, 권한·보관 기간·릴리스 설정, dev/main 메타데이터를 검사했고 임시 Git 저장소에서 태그 없음·동일 커밋·annotated tag·다른 커밋 충돌을 실행 검증했다.
+- 실제 GitHub Actions 실행·원격 push·태그 생성·Release 게시·스토어 제출은 수행하지 않았다.
+
+---
+
+## 2026-10-03 · 1.1.0 제품 버전 표기 확정 및 dev 병합
+
+- 사용자 지시에 따라 `VERSION`, source manifest, 현재 구조 문서의 제품 버전을 1.1.0으로 통일했다. 아래 작업 기록의 1.2.0~1.2.2는 미배포 로컬 작업 당시의 임시 표기이며 최종 배포 버전이 아니다. 셀프호스팅·클라우드 구현, 수정 사항과 빌드·릴리스 workflow는 보존한다.
+- origin/dev를 fetch하여 로컬 dev와 동일한 `b0127dc`임을 확인했다. 버전 정정 커밋과 기존 작업 커밋을 로컬 dev에 병합하고 병합된 feature 브랜치를 삭제한다. 추가 worktree는 없으며 현재 저장소 폴더와 브라우저 검증 기록은 유지한다. 원격 push·Release 실행·스토어 제출은 하지 않는다.
+- 검증: `npm test` 52개·계약 테스트 10개 통과. 기본 selfhost 빌드 후 VERSION/source/build manifest가 모두 1.1.0임을 확인했다. 별도 unpacked Chromium의 실제 action popup 검사도 460×510·footer 509·가로 overflow 없음으로 통과했다. 클라우드 mock 공개 설정의 빌드·ZIP 검사는 통합 테스트로 검증했으며 실제 운영 로그인을 수행하지 않았다.
+
+---
+
+## 2026-10-03 · VERSION 기반 GitHub 빌드·릴리스 workflow
+
+- `.github/workflows/build.yml`을 `main` push 또는 dev/main 수동 실행의 빌드·릴리스 workflow로 갱신했다. safetyreport의 기존 흐름을 참고했으며 `[self-hosted, Linux, X64, "235"]` 러너만 사용한다. GitHub API 읽기로 확장 저장소에도 `235` 라벨 러너가 등록되어 있음을 확인했고 러너 서비스·다른 저장소는 변경하지 않았다.
+- `VERSION`을 검증해 빌드 manifest·`v<VERSION>` 태그·버전별 ZIP을 맞춘다. 빌드는 실행 커밋 SHA를 checkout하고, 기존 태그가 다른 커밋을 가리키면 중단한다. 같은 커밋 재실행의 릴리스 자산 업로드를 허용하고 릴리스 workflow의 동시 실행을 제한한다.
+- GitHub Variables의 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`를 필수로 확인하고 빌드에 주입한다. Node 22·프로젝트에 고정된 Playwright Chromium을 준비해 테스트와 계약 검사를 실행한 후 정확한 버전 ZIP만 artifact와 GitHub Release에 올린다. 브라우저 준비는 시스템 패키지를 설치하지 않으며 공용 캐시의 다른 브라우저를 자동 정리하지 않도록 설정했다.
+- 패키징은 VERSION과 다른 오래된 빌드를 거부한다. 기존 ZIP을 먼저 제거하여 같은 이름으로 다시 패키징할 때 삭제된 파일이 남지 않게 했다. 공개 설정 없는 로컬 selfhost 빌드는 계속 허용하며 릴리스 패키징은 거부한다. 제품 버전은 1.2.2를 유지한다.
+- 검증: `npm test` 52개·계약 테스트 10개 통과. 실제 configured 빌드/ZIP 통합 검사는 source manifest와 다른 VERSION 적용, 번들의 mock 공개 설정과 정확한 host permission, ZIP 루트 manifest, 삭제 파일 미포함, 오래된 버전·미설정 빌드 거부를 확인했다. CI와 같은 Chromium 140.0.7339.186 및 CHROME_PATH로 52개 테스트도 통과했다.
+- actionlint 1.7.12 통과(사용자 정의 `235` 라벨 진단만 제외). 모든 run step의 bash 문법, VERSION outputs, 태그 없음·동일/다른 커밋·annotated tag의 충돌 검사를 임시 저장소에서 실행하여 통과했다. README·CLAUDE에 실행·설치·러너 준비 방법을 기록했다.
+- 실제 GitHub Actions 실행·태그 생성·Release 게시·push·스토어 제출은 하지 않았다. workflow와 스크립트만 로컬 커밋으로 정리한다.
+
+---
+
+## 2026-10-03 · 1.2.2 안전신문고 HTTP/HTTPS 페이지 범위와 클라우드 접근 권한 확인
+
+- 기존 HTTPS에 더해 `http://www.safetyreport.go.kr/*`를 content script와 Shadow DOM 스타일 WAR의 정확한 주입 범위에 추가했다. worker는 같은 정확한 HTTP/HTTPS www 호스트의 최상위 페이지·확장 ID만 content 역할로 허용한다. content에는 조회/번호/상태만 허용하며 설정·로그인·크롤링 제어는 계속 거부한다.
+- Supabase `host_permissions`는 기존 빌드 로직이 프로젝트 HTTPS origin 하나를 자동 추가함을 확인했다. 등록된 실제 GitHub 공개 설정으로 임시 빌드하고 unpacked Chromium에서 `chrome.permissions.contains`가 true임을 확인했다. 설정 값은 출력하지 않았으며 cloud 네트워크 요청은 0건이었다. 기존 로컬 build와 운영 설정은 변경하지 않는 임시 검증이었다.
+- `npm test`: 50개 통과. HTTP/HTTPS에서 두 백엔드 조회, 비밀키/제어 접근 거부, 위장 도메인·다른 scheme·다른 포트·하위 frame·타 확장 ID 거부 및 manifest 주입/스타일 범위 일치를 추가 검사했다.
+- 계약 테스트 10개, 기본 빌드, 실제 action popup 경계 검사 통과. 기존 PC/map 계약 사본·전체 권한 grant·CSP는 변경하지 않았다.
+- 별도 Chromium 153.0.8010.12 + 로컬 mock: 실제 HTTP 문서 URL을 유지한 상태에서 closed Shadow DOM 자동 주입·조회·14px 스타일 적용을 확인했고 기존 HTTPS 흐름·복사·노드 교체·모드별 통신·재시작도 통과했다. 결과에 `httpAndHttpsContentScripts`, `httpShadowStyles`를 기록했다.
+- 실제 운영 페이지의 로그인/입력 흐름과 카카오 OAuth·운영 API 호출·권한 다이얼로그는 별도 검증이다. 로컬 커밋만 작성하며 push·배포 없음.
+
+---
+
+## 2026-10-03 · GitHub 빌드의 Supabase 공개키 변수 참조 수정
+
+- GitHub 저장소 Variables에는 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`가 등록되어 있으나 workflow가 공개키를 `vars.PUBLISHABLE_KEY`로 참조하던 오류를 수정했다. 이름 확인과 읽기만 수행했으며 GitHub 설정은 변경하지 않았다.
+- Actions 빌드는 두 공개 설정을 번들에 포함한다. 로컬 빌드는 GitHub Variables를 자동으로 읽지 않는다는 차이를 README에 명시했다.
+- 등록된 실제 GitHub Variables를 출력하지 않고 임시 디렉터리의 빌드 환경에 전달하여 빌드 성공·번들의 두 값 포함·정확한 Supabase host permission을 확인했다. mock 값 빌드도 통과했다. 임시 파일은 제거하고 기존 로컬 build는 보존했다.
+- 카카오 로그인·운영 API 호출·실제 Actions 실행은 하지 않았다. 제품 코드는 변경하지 않아 제품 버전은 1.2.1을 유지한다. 로컬 커밋만 작성하며 push·배포 없음.
+
+---
+
+## 2026-10-03 · 1.2.1 최근 변경 검토의 버그·UI 개선
+
+수정:
+- 신고·담당자 동시 페이지 요청은 각각 현재 누적 목록에 병합한다. 목록별 중복 요청을 막고 실패 안내와 재시도 버튼을 유지한다.
+- 차량·주소 패널 화면 데이터에 60초 유효기간을 적용한다. 같은 검색어를 다시 열 때 만료된 결과를 재조회하고, hash 이동 후 같은 DOM 노드의 현재 값을 다시 읽는다. 닫은 주소 패널은 주소 클릭/포커스로 다시 연다.
+- 옵션 runtime/storage 알림을 묶어 외부 모드·계정·서버 변경을 반영하고 편집 중인 입력값을 보존한다. 선택된 모드를 빈 안내 항목으로 바꿀 수 없게 한다.
+- URL·키·알림·확인 주기 수정과 모드 전환은 이전 입력값 테스트를 무효화한다. 권한 요청 전부터 작업을 식별해 늦은 권한 승인·테스트 응답도 적용하지 않는다.
+- 저장 결과·저장된 서버 연결 상태·현재 입력값 테스트를 분리한다. 저장 후 실제 연결을 확인하고, URL·키를 정규화해도 저장 완료 안내를 유지한다. 로그인/로그아웃 실패는 별도 오류 영역에 유지한다.
+- 알림이 허용된 selfhost 폴링은 실행 상태 전환과 별도로 `/crawl/done/ext` 완료 기록을 읽으며 done=true일 때만 완료 알림을 만든다. 알림 미사용·권한 없음·cloud에서는 소비하지 않는다. 시작/완료 알림 ID를 분리한다. 기존 서버의 마지막 기록을 읽고 제거하는 계약은 그대로이며 서버가 제공하지 않는 기기별 큐를 가정하지 않는다.
+- 처리중 배지의 마지막 정상 확인 건수를 서버 origin·키 SHA-256 지문에 묶어 저장하고 worker/브라우저 재시작 때 복원한다. 복원 자체는 통신하지 않으며 cloud·다른 서버/키·차단·폴링 실패에는 이전 건수를 표시하지 않는다.
+- selfhost 크롤링 상태·시작/중지 메뉴를 팝업 상단으로 옮겨 최대 200개 최근 답변 앞에서 접근할 수 있게 한다. 디자인 토큰·closed Shadow DOM·원본 이벤트 전파와 모드별 통신 분리는 유지한다.
+
+검증:
+- `npm test`: 48개 통과. 추가 회귀 14개는 동시 페이지 응답 순서 양쪽·중복 클릭, 화면 캐시 만료, 같은 노드의 페이지 이동·주소 재열기, 모드 동기화·편집 보존·빈 선택, 늦은 테스트/권한 응답·모드 왕복·중간 화면 없는 외부 왕복, 같은 계정 토큰 갱신과 계정 변경 구분, 저장/연결 분리, 로그인/로그아웃 오류 유지, 200건 앞 크롤링 메뉴, 짧은 완료 기록 소비·중복 방지·비활성 미소비, 배지 복원 범위·실패를 검사한다.
+- `npm run test:contracts`: 10개 통과. PC/map 정본 계약 사본은 변경하지 않았다.
+- `npm run build`: 1.2.1 기본 selfhost 빌드 통과. cloud 공개 설정 없는 빌드를 운영 cloud 검증으로 부르지 않는다.
+- 별도 unpacked Chromium 153.0.8010.12 + 로컬 mock 서버: 옵션 두 탭 모드 동기화, closed Shadow DOM·같은 주소 노드 hash 이동, 실제 alarm dispatch의 폴링 사이 완료 알림, worker CDP 중단 및 브라우저 재시작 뒤 배지 복원 통과. 기존 설치/마이그레이션·크롤링 제어·복사·입력 교체·focus·모드별 통신·버전/인증/오프라인 검사도 통과.
+- 실제 action popup 경계 검사 통과: 460×510, footer 509, 본문 가로 overflow 없음. 라이트/다크 옵션·팝업 캡처를 검수했다. 결과는 `artifacts/backend-browser/`.
+- 실제 카카오 OAuth·운영 Supabase/PC 서버·실제 OS Alt-Tab·설치 권한 다이얼로그는 미검증이며 mock/SDK/Chromium 결과와 구분한다.
+
+다른 저장소·운영 설정은 변경하지 않았으며 로컬 커밋만 작성한다. push·배포·스토어 제출 없음.
+
+---
+
+## 2026-10-03 · 1.2.0 셀프호스팅 / 클라우드 실제 백엔드 분리
+
+최신 확장 dev `b0127dc`를 fast-forward한 뒤 `feat/backend-modes-20261003`에서 작업. 최초 미커밋 변경 없음. 로컬 구현·커밋이며 push·배포·스토어 제출 없음.
+
+변경:
+- 옵션 상단에 `backendMode: selfhost | cloud`와 명시 선택 대기를 추가. 과거 서버 주소·API 키·연결 테스트·알림·확인 주기를 복구하고 각 모드 설정을 따로 보존한다. 저장과 입력값 연결 테스트를 구분한다.
+- worker adapter가 실제 PC REST와 Supabase my-reports POST를 분기한다. 차량·주소·요약·최근 답변·번호 복사·공식 원문/내 서버 상세·서버 관리·크롤링 제어·알림·배지를 복구/유지한다. 모드별 기능표는 README.
+- selfhost 인증·동의는 서버가 결정하며 확장 Supabase 로그인은 불필요. cloud에는 서버 키·호환 헤더·크롤링 메뉴·폴링·처리중 배지를 보내거나 표시하지 않는다. 실패 시 다른 백엔드로 전환하지 않는다.
+- explicit 선택 > legacy 단일 설정 추론, 양쪽 설정/신규 설치는 선택 UI. legacy sync 서버 설정을 TRUSTED_CONTEXTS local에 먼저 옮기고 비밀키 사본만 제거. worker·브라우저 재시작에도 선택 유지.
+- 모드/서버/계정 변경 때 AbortController·세대 검증·backend/서버 origin 또는 Supabase 계정/조회 조건 캐시 폐기. SDK의 이전 refresh 재시도도 원래 client 세대에 묶어 빠른 모드 왕복 후 추가 통신을 막는다. 명시 로그아웃은 오프라인에서도 자기 local 세션을 제거한다.
+- PC 정본 `contracts/selfhost-compat/README.md`, `vectors.json`을 바이트 복사. PC dev `a35b7d2` 기반 `fix/v3-user-reports-20261003` 작업 트리에 생성된 정본을 사용했다(당시 원격 dev에는 아직 없음). README SHA-256 `e316079f01cbcb2a2f4b37d0be732b198587b9c36ca7a5abe5b4cb9ded428a24`, vectors `c618527719c7a54790b051a632a2093e697499596742fe5028f94b149e85bd6f`. map my-reports 사본은 수정하지 않았다.
+- 인증된 버전 probe의 실제 서버 major >=3 및 최상위 protocol 지원 필드를 매 실제 요청 전에 검사. 4자리/dev/product 1.x를 올바르게 처리. 연결 테스트는 실제 상태 API·동의 게이트까지 확인. 409 호환 거부는 알람을 중단하고 수동 연결 테스트로 재개. 기존 구현처럼 REST만 사용하며 WS/4406 경로는 없음.
+- 필수 host permission은 Supabase origin 하나, selfhost는 optional HTTP/HTTPS 선언에서 입력 origin 하나만 요청. 알림도 선택 권한. CSP 변경 없음. DTO를 worker에서 투영하고 원문 오류는 코드 allowlist로만 전달한다.
+- 기존 디자인 토큰·13~16px 글자·결과/처분 색상·closed Shadow DOM·원본 입력/클릭 전파 유지. worker 재시작은 열린 패널을 닫지 않고 캐시를 버려 재조회한다.
+
+자동 검증:
+- `npm test`: 34개 통과 (Node 22, 실제 Chrome UI fixture 테스트 포함).
+- `npm run test:contracts`: 10개 통과. map MANIFEST, PC 계약 스냅샷 및 공유 벡터, 헤더/오류/DTO 검사.
+- worker/adapter: 신규·legacy 서버만·cloud 세션만·양쪽·명시 모드·재시작, selfhost→cloud→selfhost의 늦은 응답·서버/계정 변경, 중복 poll/알림/배지, 업데이트 거부 지속 중단, 오프라인 로그아웃을 검사했다.
+- 실제 Supabase JS SDK + mock HTTP로 만료 세션·모드 왕복 중 refresh를 검사. selfhost의 cloud 요청 0건, cloud의 자기 서버 요청 0건. 갱신을 중단한 뒤 SDK가 내부 재시도를 마칠 때까지 기다려 실제 추가 네트워크 0건과 토큰 보존을 확인했다.
+- `npm run build`: 제품 1.2.0, 기본 selfhost 가능 / cloud 공개 설정 없는 빌드 통과.
+
+별도 실제 브라우저 검증:
+- `SR_CHROMIUM_PATH=/home/better0101/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome npm run test:backend-browser`: Chromium 153.0.8010.12 unpacked 확장, 실제 service worker와 closed Shadow DOM content script, 로컬 mock 서버로 통과.
+- 옵션·팝업·차량/주소 패널, 라이트/다크, 서버 키 마스킹, 실제 번호 복사, 서버 크롤링 시작/중지, 모드 변경 뒤 서버 요청 0건, node 교체·tab 전환·blur/focus·Alt-Tab 키 조합·클릭 버튼 release 뒤 패널 유지, 원래 페이지 click/input 이벤트 전달을 검사했다.
+- 새 설치와 legacy/cloud/양쪽/명시 선택의 cold-start 마이그레이션을 각각 브라우저 프로필에 저장한 후 재시작해 확인. CDP로 worker를 실제 중단한 뒤 전역 marker 소멸 및 첫 검색 정상 유지를 확인. 서버 2.x·protocol 미지원·401·오프라인 안내를 구분했다.
+- `npm run test:action-popup`: 실제 action popup 460px, 단일 스크롤·footer/viewport 경계 통과.
+- 캡처와 결과는 `artifacts/backend-browser/`, 기존 cloud fixture 캡처는 `artifacts/ui-review/`. 이미지의 폰트·상태톤·마스킹·모드별 메뉴를 별도로 검수했다.
+
+검증 한계:
+- 실제 카카오 OAuth, 운영 Supabase/my-reports/PC 서버, 실데이터 A/B 권한, 로그인된 안전신문고 원문 링크의 실제 열람은 검증하지 않았다. SDK·mock·브라우저 통과와 구분한다.
+- 실제 OS 창 전환 Alt-Tab은 headless 환경에서 미검증. 키 조합·실제 브라우저 tab 이동·blur/focus 회귀를 검사했다.
+- 브라우저 테스트 사본 manifest에 해당 mock origin/알림만 미리 허용했다. 운영 설치의 Chrome 권한 허용 다이얼로그는 미검증.
+- 다른 저장소 코드는 변경하지 않았다. 사용자 후속 지시로 PC 저장소에 `pull --ff-only`만 수행했으며 로컬 수정은 보존했다. 운영 설정은 변경하지 않았다.
+
+---
+
 ## 2026-09-30 · my-reports-v1 계약으로 전환
 
 - map 정본 계약 `contracts/my-reports/`(v1)를 사본으로 추가하고 MANIFEST 검사 테스트를 둔다.

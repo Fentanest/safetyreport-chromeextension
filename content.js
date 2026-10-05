@@ -12,7 +12,9 @@
     timer: null, open: false, dismissed: false, data: null, copying: false, cancelCopy: false, managerOpen: false,
   }]));
   const panels = {};
-  let theme = 'system', scanQueued = false, positionQueued = false;
+  const DATA_TTL = 60_000;
+  let backendMode = null;
+  let theme = 'system', scanQueued = false, positionQueued = false, refreshInputs = false;
   const themeValue = () => theme === 'system'
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
   const updateTheme = () => Object.values(panels).forEach(panel => { panel.host.dataset.srTheme = themeValue(); });
@@ -40,7 +42,7 @@
     const shell = document.createElement('div');
     shell.className = 'sr-ui sr-panel';
     shell.setAttribute('role','dialog');
-    shell.setAttribute('aria-label',kind === 'vehicle' ? '이 차량의 내 완료 신고' : '이 주소의 내 완료 신고');
+    shell.setAttribute('aria-label',kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고');
     root.append(shell);
     document.body.append(host);
     root.addEventListener('click', event => {
@@ -87,11 +89,12 @@
   }
   function hide(kind,dismissed=false) {
     const s = states[kind]; s.open = false;
-    if (dismissed) { s.dismissed = true; s.generation++; s.cancelCopy = true; }
+    if (dismissed) { clearTimeout(s.timer); s.dismissed = true; s.generation++; s.cancelCopy = true; s.loading = s.reportsLoading = s.managersLoading = false; }
     refreshVisibility();
   }
   function invalidate(kind) {
     const s = states[kind]; clearTimeout(s.timer); s.generation++; s.data = null; s.cancelCopy = true; s.managerOpen = false;
+    s.loadedAt = 0; s.loading = s.reportsLoading = s.managersLoading = false; s.message = '';
   }
   function show(kind) {
     states[kind].open = true; states[kind].dismissed = false; panel(kind); refreshVisibility();
@@ -100,57 +103,47 @@
   function render(kind,message='') {
     const s = states[kind], p = panel(kind), data = s.data;
     const heading = kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고';
+    const scope = data?.backend === 'selfhost' ? '내 서버의 신고 · 처리중 포함' : backendMode === 'selfhost' ? '셀프호스팅 · 내 서버' : backendMode === 'cloud' ? '클라우드 · 내가 공유한 완료 신고' : '현재 선택한 백엔드로 조회';
     const total = Number(data?.summary?.total || 0), missing = Number(data?.summary?.report_number_missing || 0);
-    p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title">${heading}<span class="sr-plain-count">${data ? `${SRUI.count(total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.esc(s.query)}</p></div><div class="sr-header-actions">${data && total>missing ? '<button class="sr-button" data-action="copy">신고번호 복사</button>' : ''}<button class="sr-icon-button" data-action="close" aria-label="닫기">✕</button></div></header><div class="sr-panel-content">${data ? `${SRUI.summary(data.summary)}${kind==='address'?SRUI.managers(data.managers,s.managerOpen):''}${SRUI.records(data.reports)}${data.reports?.next_cursor?'<button class="sr-button sr-more" data-action="more">신고 더 보기</button>':''}` : `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':'내 계정으로 공유한 완료 신고'}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
+    p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title">${heading}<span class="sr-plain-count">${data ? `${SRUI.count(total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.esc(s.query)}</p></div><div class="sr-header-actions">${data && total>missing ? '<button class="sr-button" data-action="copy">신고번호 복사</button>' : ''}<button class="sr-icon-button" data-action="close" aria-label="닫기">✕</button></div></header><div class="sr-panel-content">${data ? `${s.message?`<p class="sr-section sr-note" role="status">${SRUI.esc(s.message)}</p>`:''}${SRUI.summary(data.summary)}${kind==='address'?SRUI.managers(data.managers,s.managerOpen):''}${SRUI.records(data.reports)}${data.reports?.next_cursor?`<button class="sr-button sr-more" data-action="more" ${s.reportsLoading?'disabled':''}>${s.reportsLoading?'불러오는 중…':'신고 더 보기'}</button>`:''}` : `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':SRUI.esc(scope)}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
+    const managerButton = p.shell.querySelector('[data-action="more-managers"]');
+    if (managerButton) { managerButton.disabled = !!s.managersLoading; if (s.managersLoading) managerButton.textContent = '불러오는 중…'; }
   }
-  const failureText = code => code==='AUTH_REQUIRED'?'확장 아이콘에서 카카오 로그인 후 조회해 주세요.':
-    code==='ACCESS_DENIED'?'이 계정의 공유 동의 또는 접근 상태를 확인해 주세요.':
-    code==='NOT_CONFIGURED'?'확장 연결 설정이 필요합니다.':
-    code==='RATE_LIMITED'?'요청이 많습니다. 잠시 후 입력칸을 다시 눌러 주세요.':
-    code==='UNAVAILABLE'?'서버가 잠시 응답하지 않습니다. 잠시 후 다시 시도해 주세요.':'조회 실패. 입력칸을 다시 누르면 재시도합니다.';
+  const failureText = SRUI.errorText;
   async function search(kind,retried=false) {
     const s=states[kind], query=s.query, generation=s.generation;
-    if (!s.open || s.dismissed || !query) return;
+    if (!s.open || s.dismissed || !query || s.loading) return;
+    s.loading = true;
     render(kind);
     try {
       const result=await send({type:'SEARCH',kind,query,fresh:retried});
       if (generation!==s.generation || query!==s.query || !s.open || s.dismissed || !s.node?.isConnected) return;
-      s.data={summary:result.summary,reports:result.reports,managers:result.managers}; render(kind);
+      backendMode=result.backend || 'cloud';
+      s.data={backend:backendMode,summary:result.summary,reports:result.reports,managers:result.managers}; s.loadedAt=Date.now(); render(kind);
     } catch(error) {
       if (generation!==s.generation || !s.open) return;
-      if (error.message==='DATASET_CHANGED' && !retried) return search(kind,true);
+      if (error.message==='DATASET_CHANGED' && !retried) { s.loading=false; return await search(kind,true); }
       render(kind,failureText(error.message));
-    }
+    } finally { if (generation===s.generation) s.loading=false; }
   }
   // the next page of the same search; a data change restarts from page 1 (the server refuses a stale cursor)
-  async function loadMore(kind) {
-    const s=states[kind], data=s.data;
-    if (!data?.reports?.next_cursor) return;
-    const generation=s.generation;
+  const loadMore = kind => loadPage(kind,'reports');
+  const loadMoreManagers = kind => loadPage(kind,'managers');
+  async function loadPage(kind,part) {
+    const s=states[kind], cursor=s.data?.[part]?.next_cursor, flag=part+'Loading';
+    if (!cursor || s[flag]) return;
+    const generation=s.generation; s[flag]=true; s.message=''; render(kind);
     try {
-      const next=await send({type:'SEARCH',kind,query:s.query,cursor:data.reports.next_cursor});
-      if (generation!==s.generation || !s.open) return;
-      s.data={...data,reports:{...next.reports,items:[...data.reports.items,...next.reports.items]}}; render(kind);
+      const next=await send({type:'SEARCH',kind,query:s.query,cursor,...(part==='managers'?{part}: {})});
+      if (generation!==s.generation || !s.open || s.data?.[part]?.next_cursor!==cursor) return;
+      // The other list may have advanced while this request was pending.
+      s.data={...s.data,[part]:{...next[part],items:[...s.data[part].items,...next[part].items]}};
+      if (part==='managers') s.managerOpen=true;
     } catch(error) {
-      if (generation!==s.generation) return;
-      if (error.message==='DATASET_CHANGED') { s.data=null; s.generation++; return search(kind,true); }
-      s.data=null; render(kind,'목록을 이어서 불러오지 못했습니다. 다시 조회해 주세요.');
-    }
-  }
-  async function loadMoreManagers(kind) {
-    const s=states[kind], data=s.data;
-    if (!data?.managers?.next_cursor) return;
-    const generation=s.generation;
-    try {
-      const next=await send({type:'SEARCH',kind,query:s.query,part:'managers',cursor:data.managers.next_cursor});
       if (generation!==s.generation || !s.open) return;
-      s.managerOpen=true;
-      s.data={...data,managers:{...next.managers,items:[...data.managers.items,...next.managers.items]}}; render(kind);
-    } catch(error) {
-      if (generation!==s.generation) return;
-      if (error.message==='DATASET_CHANGED') { s.data=null; s.generation++; return search(kind,true); }
-      render(kind,'담당자 목록을 이어서 불러오지 못했습니다. 다시 조회해 주세요.');
-    }
+      if (error.message==='DATASET_CHANGED') { invalidate(kind); return search(kind,true); }
+      s.message=(part==='managers'?'담당자':'신고')+' 목록을 이어서 불러오지 못했습니다. 더 보기를 눌러 다시 시도해 주세요.';
+    } finally { if (generation===s.generation) { s[flag]=false; if(s.open)render(kind); } }
   }
   // every page of /numbers (500 per page) before the clipboard; any change or cancel copies nothing
   async function copyNumbers(kind) {
@@ -187,15 +180,19 @@
     if([...query].length<6 || document.getElementById('chkNoVhrNo')?.checked){hide('vehicle');return;}
     if(reopen)show('vehicle');
     if(!s.open || s.dismissed)return;
+    if(s.data && Date.now()-s.loadedAt>=DATA_TTL)invalidate('vehicle');
     if(s.data){render('vehicle');return;}
+    render('vehicle');
     clearTimeout(s.timer);s.timer=setTimeout(()=>search('vehicle'),600);
   }
-  function addressChanged() {
+  function addressChanged(reopen=false) {
     const s=states.address, query=normalizeAddress(s.node?.textContent);
-    if(query===s.query)return;
-    invalidate('address');s.query=query;s.dismissed=false;
+    if(query===s.query && !reopen)return;
+    if(query!==s.query || (s.data && Date.now()-s.loadedAt>=DATA_TTL))invalidate('address');
+    s.query=query;s.dismissed=false;
     if([...query].length<5){hide('address');return;}
-    show('address');s.timer=setTimeout(()=>search('address'),700);
+    show('address');render('address');if(s.data)return;
+    clearTimeout(s.timer);s.timer=setTimeout(()=>search('address'),700);
   }
   function rebind() {
     const input=document.getElementById('VHRNO'), v=states.vehicle;
@@ -211,9 +208,15 @@
     }
     const address=document.getElementById('add1'), a=states.address;
     if(address!==a.node){
-      a.observer?.disconnect();invalidate('address');hide('address');a.node=address;a.query='';
-      if(address){a.observer=new MutationObserver(addressChanged);a.observer.observe(address,{childList:true,characterData:true,subtree:true});addressChanged();}
+      a.controller?.abort();a.observer?.disconnect();invalidate('address');hide('address');a.node=address;a.query='';
+      if(address){
+        a.controller=new AbortController();const signal=a.controller.signal;
+        address.addEventListener('click',()=>addressChanged(true),{signal});
+        address.addEventListener('focus',()=>addressChanged(true),{signal});
+        a.observer=new MutationObserver(()=>addressChanged());a.observer.observe(address,{childList:true,characterData:true,subtree:true});addressChanged();
+      }
     }
+    if(refreshInputs){refreshInputs=false;addressChanged();if(document.activeElement===v.node)vehicleChanged(true);}
   }
   function queueScan(){if(scanQueued)return;scanQueued=true;requestAnimationFrame(()=>{scanQueued=false;rebind();});}
   new MutationObserver(queueScan).observe(document.documentElement,{childList:true,subtree:true});
@@ -233,6 +236,15 @@
   window.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('scroll',queuePosition);
-  window.addEventListener('hashchange',()=>{for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);states[kind].query='';}queueScan();});
-  chrome.runtime.onMessage.addListener(message=>{if(message?.type==='AUTH_CHANGED')for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);}});
+  window.addEventListener('hashchange',()=>{for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);states[kind].query='';}refreshInputs=true;queueScan();});
+  chrome.runtime.onMessage.addListener(message=>{
+    if(message?.type==='AUTH_CHANGED'||message?.type==='DATA_INVALIDATED'){backendMode=null;for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);}}
+    if(message?.type==='WORKER_RESTARTED'){
+      backendMode=null;
+      for(const kind of ['vehicle','address']){
+        invalidate(kind);
+        if(states[kind].open&&!states[kind].dismissed){render(kind,'현재 연결을 다시 확인하는 중…');states[kind].timer=setTimeout(()=>search(kind),0);}
+      }
+    }
+  });
 })();
