@@ -52,8 +52,9 @@ export function createSelfhostClient({ fetchImpl = fetch, version, permission })
     if (!config.serverUrl || !config.apiKey) throw new Error('SERVER_NOT_CONFIGURED');
     const origin = serverOrigin(config.serverUrl);
     if (!await permission(`${origin}/*`)) throw new Error('SERVER_PERMISSION_REQUIRED');
+    // 5분류(observation-v5, 2026-10-11): 이 헤더가 없는 구버전 서버는 safety/living을 other로 접어 보낸다. 그래도 동작은 유지된다.
     const headers = { 'X-API-Key': config.apiKey, 'X-SafetyReport-Client': 'chromeextension',
-      'X-SafetyReport-Version': version, 'X-SafetyReport-Protocol': String(PROTOCOL) };
+      'X-SafetyReport-Version': version, 'X-SafetyReport-Protocol': String(PROTOCOL), 'X-SR-Taxonomy': '5' };
     const send = async (path, body) => {
       let response;
       try { response = await fetchImpl(`${origin}/api/v1/${path}`, { method: body === undefined ? 'GET' : 'POST',

@@ -69,17 +69,27 @@ const statusFields = ['accepted','partial','rejected','completed_unknown'];
 const dispositionFields = ['fine','warning','penalty','none','unknown'];
 const fineFields = ['fine_count','confirmed_count','confirmed_sum_won','unconfirmed_count','other_count'];
 const reportFields = ['report_number','source_report_id','official_url','vehicle_number','report_date','completed_date','category','status','status_label','disposition','amount_kind','confirmed_amount_won','penalty_points','address','lat','lng','agency_key','agency_name_original','agency_name_current','manager_key','manager_name','violation_law','rating'];
+// 5분류(observation-v5, 2026-10-11): traffic·parking·safety·living·other. traffic/parking/other는 구버전 서버도 보내는 필수 셋이고,
+// safety/living은 있으면 그대로 통과시키되 없어도(구버전 서버) 실패시키지 않는다.
+const REQUIRED_CATEGORY_FIELDS = ['traffic','parking','other'];
+const OPTIONAL_CATEGORY_FIELDS = ['safety','living'];
+function categoryDto(value) {
+  if (!value || typeof value !== 'object') throw new Error('REQUEST_FAILED');
+  counts(value, REQUIRED_CATEGORY_FIELDS);
+  const present = OPTIONAL_CATEGORY_FIELDS.filter(key => Object.hasOwn(value, key));
+  for (const key of present) if (!Number.isInteger(value[key]) || value[key] < 0) throw new Error('REQUEST_FAILED');
+  return pick(value, [...REQUIRED_CATEGORY_FIELDS, ...present]);
+}
 function summaryDto(value) {
   if (value == null) return null;
   counts(value, ['total','completed_date_missing','report_number_missing']);
   counts(value.status, statusFields); counts(value.disposition, dispositionFields);
   counts(value.fine_amount, fineFields.filter(key => key !== 'confirmed_sum_won'));
-  counts(value.category, ['traffic','parking','other']);
   if (value.accept_rate !== null && (!Number.isFinite(value.accept_rate) || value.accept_rate < 0 || value.accept_rate > 100)) throw new Error('REQUEST_FAILED');
   if (value.fine_amount.confirmed_sum_won !== null && (!Number.isFinite(value.fine_amount.confirmed_sum_won) || value.fine_amount.confirmed_sum_won < 0)) throw new Error('REQUEST_FAILED');
   return { ...pick(value, ['total','accept_rate','completed_date_missing','report_number_missing']),
     status: pick(value.status, statusFields), disposition: pick(value.disposition, dispositionFields),
-    fine_amount: pick(value.fine_amount, fineFields), category: pick(value.category, ['traffic','parking','other']) };
+    fine_amount: pick(value.fine_amount, fineFields), category: categoryDto(value.category) };
 }
 function reportDto(row) {
   if (!row || reportFields.some(key => !Object.hasOwn(row, key))) throw new Error('REQUEST_FAILED');

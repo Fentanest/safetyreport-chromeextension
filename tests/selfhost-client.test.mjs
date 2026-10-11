@@ -30,7 +30,7 @@ test('selfhost: version handshake before every data/control request, exact heade
   const calls=[];
   const client=createSelfhostClient({version:'1.1.0',permission:async()=>true,fetchImpl:async(url,options)=>{
     calls.push({url,options});assert.ok(url.startsWith(config.serverUrl));assert.equal(options.redirect,'error');assert.equal(options.credentials,'omit');
-    assert.deepEqual({...options.headers},{'X-API-Key':'private-key','X-SafetyReport-Client':'chromeextension','X-SafetyReport-Version':'1.1.0','X-SafetyReport-Protocol':'3',...(options.method==='POST'?{'Content-Type':'application/json'}:{})});
+    assert.deepEqual({...options.headers},{'X-API-Key':'private-key','X-SafetyReport-Client':'chromeextension','X-SafetyReport-Version':'1.1.0','X-SafetyReport-Protocol':'3','X-SR-Taxonomy':'5',...(options.method==='POST'?{'Content-Type':'application/json'}:{})});
     return new Response(JSON.stringify(url.endsWith('/server/version')?probe:url.endsWith('/summary')?{status:'success',data:{total:2,processingCount:1,recent_answers:rows}}:url.endsWith('/crawl/status')?{status:'success',running:false,pending:0}:url.includes('/crawl/')?{status:'success'}:{status:'success',count:rows.length,data:rows}));
   }});
   for(const [operation,message] of [['search',{kind:'vehicle',query:' 12 가3456 '}],['numbers',{kind:'address',query:'서울 종로구 예시로 1'}],['summary',{}],['crawl-start',{}],['crawl-stop',{}],['crawl-status',{}]]){
@@ -40,6 +40,17 @@ test('selfhost: version handshake before every data/control request, exact heade
   // Validate before probing too: 6-character minimum applies at the trust boundary.
   await assert.rejects(client(config,'search',{kind:'vehicle',query:'12가3'}),/INVALID_QUERY/);
   assert.equal(calls.length,before);
+});
+test('selfhost: X-SR-Taxonomy: 5 is sent on every request; an old server that ignores the header still works',async()=>{
+  // 5분류(observation-v5, 2026-10-11): 헤더를 모르는 구버전 서버는 그냥 무시하고 기존 응답(3분류 포함 가능)을 돌려준다.
+  const calls=[];
+  const client=createSelfhostClient({version:'1.1.0',permission:async()=>true,fetchImpl:async(url,options)=>{
+    calls.push({url,headers:options.headers});
+    return new Response(JSON.stringify(url.endsWith('/server/version')?probe:{status:'success',count:rows.length,data:rows}));
+  }});
+  const result=await client(config,'search',{kind:'vehicle',query:'12가3456'});
+  assert.ok(calls.every(c=>c.headers['X-SR-Taxonomy']==='5'),'every real request (including the version probe) carries the taxonomy header');
+  assert.equal(result.reports.items.length,rows.length);
 });
 test('selfhost: unauthorized, old server, absent metadata, HTTP409 and offline never fall back or retry',async()=>{
   for(const [body,status,error]of [[null,0,'SERVER_OFFLINE'],[{},401,'SERVER_AUTH_REQUIRED'],[{},403,'SERVER_ACCESS_DENIED'],[{...probe,version:'2.9.0'},200,'SERVER_UPGRADE_REQUIRED'],[{status:'success',version:'3.0.0.0'},200,'COMPAT_INFO_MISSING'],[{status:'error',code:'CLIENT_UPGRADE_REQUIRED'},409,'CLIENT_UPGRADE_REQUIRED'],[{status:'error',code:'CLIENT_PROTOCOL_UNSUPPORTED'},409,'CLIENT_PROTOCOL_UNSUPPORTED']]){

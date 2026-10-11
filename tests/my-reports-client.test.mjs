@@ -75,6 +75,21 @@ test('shared-ui renders the real v1 fixtures: nested summary, null fine sum, ser
   assert.ok(ui.record({ ...first.reports.items[0], official_url: 'https://evil.example/#mypage/mysafereport/1' }).includes('href=') === false);
 });
 
+test('category counts: traffic/parking/other stay required; safety/living pass through and tolerate an old server without them', async () => {
+  const { projectCloudDto } = await import('../src/myReportsClient.js');
+  const first = fixture('summary-first-page');
+  const dto = projectCloudDto(first, 'summary');
+  assert.deepEqual(dto.summary.category, { traffic: 2, parking: 10, safety: 0, living: 0, other: 0 });
+  const legacy = structuredClone(first);
+  delete legacy.summary.category.safety; delete legacy.summary.category.living;
+  const legacyDto = projectCloudDto(legacy, 'summary');
+  assert.deepEqual(legacyDto.summary.category, { traffic: 2, parking: 10, other: 0 });
+  const missingRequired = structuredClone(first); delete missingRequired.summary.category.traffic;
+  assert.throws(() => projectCloudDto(missingRequired, 'summary'), /REQUEST_FAILED/);
+  const negativeOptional = structuredClone(first); negativeOptional.summary.category.safety = -1;
+  assert.throws(() => projectCloudDto(negativeOptional, 'summary'), /REQUEST_FAILED/);
+});
+
 test('worker DTO refuses missing counts and nested objects disguised as public fields', async () => {
   const { projectCloudDto } = await import('../src/myReportsClient.js');
   const empty = fixture('search-empty');
