@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-10-11 · 신고 5분류 반영과 패널·팝업·옵션 디자인 정리
+
+- 신고 분류가 traffic/parking/other 3분류에서 traffic(교통위반)·parking(주정차위반)·safety(안전신고)·living(생활불편)·other(기타) 5분류로 바뀐 map 정본 my-reports 계약을 `python3 scripts/integration/sync_contract_copy.py --contract my-reports --to <이 레포>`로 다시 받았다. `contracts/my-reports/` 사본은 직접 고치지 않았다.
+- `src/myReportsClient.js`의 `summaryDto`가 traffic/parking/other 세 필드는 그대로 필수로 요구하고, safety/living은 있으면 그대로 통과시키되 없어도(구버전 서버) 실패시키지 않는다. 신고 행의 `category`는 이미 임의 문자열을 허용하던 그대로다.
+- `src/selfhostClient.js`가 매 실제 요청에 `X-SR-Taxonomy: 5` 헤더를 추가했다. PC 서버가 이 헤더를 모르면(구버전) safety/living을 other로 접어 돌려주지만 통신 자체는 그대로 동작한다. 헤더 전송과 구버전 서버 호환을 검사하는 테스트를 추가했다.
+- `shared-ui.js`에 5분류 한글 라벨을 추가하고, 신고 카드 첫 줄에 작은 분류 칩을 붙였다. category가 없는 행(셀프호스팅 응답 등)은 칩을 만들지 않는다(없는 값을 꾸미지 않는 기존 원칙 유지).
+- 사용자 피드백("디자인이 깔끔해진 건 좋은데 백지에 글만 나열된 느낌이다")에 따라 차량·주소 패널, 팝업, 옵션 페이지를 다시 다듬었다. `shared-ui.js`에 장식용 inline SVG 아이콘 helper 하나를 추가했다(외부 폰트·CDN 없음, `aria-hidden`). 패널 헤더는 차량/주소 아이콘 뱃지 + 제목 + 건수 알약으로, 차량 query는 번호판 뱃지로, 주소 query는 핀 아이콘 + 말줄임(title 툴팁)으로 바꿨다.
+- 처리 결과·처분 요약을 얇은 분포 막대 + 점·건수 범례가 있는 "타일" 카드로 바꿨다(합계가 0이면 막대 없이 범례만 — 없는 값을 0으로 꾸미지 않는 기존 규칙 유지). 신고 카드는 결과 톤의 왼쪽 악센트 선, 번호판 뱃지·분류 칩·결과 칩·처분 칩 한 줄, 날짜·별점 아이콘이 있는 메타 줄, 건물 아이콘의 담당기관 줄, 핀 아이콘의 주소 줄로 다시 짰다.
+- 팝업·옵션 헤더에 앱 마크 뱃지·모드 뱃지(셀프호스팅/클라우드)·연결 상태 점을 추가하고, 옵션의 각 섹션 제목과 저장·연결 테스트·로그아웃·팝업의 크롤링 시작/중지 버튼에 아이콘을 붙였다. `.sr-record-key`, `.sr-record-agency`(14px 유지), `.sr-plain-count`, `.sr-total strong` 등 기존 테스트가 참조하는 DOM 클래스·id는 그대로 유지했다.
+- 라이트·다크 모두 기존 PC 토큰만 사용했다. 작은 글자(11px) 모드 뱃지(셀프호스팅) 텍스트는 라이트 테마에서 기존 `--sr-primary`가 4.5:1을 넘지 못해(3.93:1) 텍스트 전용으로 더 진한 파랑을 추가했다(배경·테두리는 토큰 그대로, 다크는 기존 `--sr-primary` 유지로 충분).
+
+검증:
+- `npm test`: 54개 통과(기존 52개 + 5분류 계약 테스트 1개 + selfhost 헤더 테스트 1개).
+- `npm run test:contracts`: 12개 통과.
+- `npm run build` 통과.
+- `SR_CHROMIUM_PATH=.../chromium-1243/chrome-linux64/chrome npm run test:backend-browser`: 실제 unpacked 확장 + 실제 service worker/content script + closed Shadow DOM + 로컬 mock 서버로 통과(요청 99건). 라이트/다크 옵션·팝업, HTTP 차량 패널, 다크 주소 패널을 캡처했다.
+- `SR_CHROMIUM_PATH=... npm run test:action-popup`: 460×510, footer 509, 본문 가로 overflow 없음.
+- 실제 my-reports-v1 fixture(5분류 포함 실제 응답)로 차량·주소 패널과 팝업(셀프호스팅/클라우드 양쪽)의 라이트·다크 캡처를 추가로 떴다. 새 디자인은 `artifacts/design-2026-10-11/`, 이전 UI 비교본은 같은 폴더의 `before/`에 두었다(둘 다 `.gitignore`의 `artifacts/` 범위).
+- 분류 칩·모드 뱃지·범례 텍스트의 라이트/다크 대비를 직접 계산해 모두 4.5:1 이상을 확인했다. 기존 `sr-badge` 6종 톤(결과·처분)의 자동 대비 테스트는 그대로 통과한다.
+
+실제 카카오 OAuth·운영 Supabase/PC 서버·실제 Chrome 웹 스토어 설치 화면은 검증하지 않았으며 mock/Chromium 결과와 구분한다. 다른 저장소·운영 설정·배포·스토어 제출·`VERSION`은 변경하지 않았다.
+
+---
+
 ## 2026-10-03 · main 수동 릴리스와 dev artifact 빌드 분리
 
 - safetyreport 빌드·릴리스 흐름을 참고해 `.github/workflows/build.yml`의 main push 트리거를 제거했다. dev/main의 `workflow_dispatch`만 빌드하며 다른 브랜치·태그는 실행 대상에서 제외한다.
