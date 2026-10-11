@@ -3,6 +3,13 @@
   const el = id => document.getElementById(id);
   const status = el('status'), login = el('login'), logout = el('logout');
   const theme = el('theme'), mode = el('backendMode');
+  // 섹션 제목·버튼에 아이콘을 붙인다. 아이콘은 shared-ui.js의 한 helper에만 둔다.
+  const sectionIcon = { secBackend: 'pulse', secServer: 'external', secCloud: 'user', secTheme: 'gear', secInfo: 'info' };
+  for (const [id, name] of Object.entries(sectionIcon)) el(id).insertAdjacentHTML('afterbegin', SRUI.icon(name, 'sr-icon-sm'));
+  el('btnSave').innerHTML = SRUI.icon('check') + '저장';
+  el('btnTest').innerHTML = SRUI.icon('pulse') + '연결 테스트';
+  el('testCloud').innerHTML = SRUI.icon('pulse') + '클라우드 연결 테스트';
+  logout.innerHTML = SRUI.icon('logout') + '이 확장에서 로그아웃';
   let generation = 0, activeMode = null, modeEpoch = 0, contextGeneration = 0, dirty = false;
   let serverRevision = 0, serverOperation = 0, serverBusy = null;
   let cloudOperation = 0, refreshTimer;
@@ -41,6 +48,11 @@
     el('modeStatus').textContent = value === 'selfhost' ? '셀프호스팅 · 내 서버의 신고 / 크롤링'
       : value === 'cloud' ? '클라우드 · 내가 공유한 답변 완료 신고'
       : '모드를 선택하면 연결합니다. 두 모드 설정은 각각 보존됩니다.';
+    // 헤더의 모드 뱃지 · 상태 점. 구체적인 연결/로그인 상태는 refresh()가 이어서 갱신한다.
+    el('modeBadge').hidden = !value;
+    if (value) { el('modeBadge').textContent = value === 'selfhost' ? '셀프호스팅' : '클라우드'; el('modeBadge').className = `sr-mode-pill sr-mode-pill--${value}`; }
+    el('statusDot').className = 'sr-status-led sr-status-led--unknown';
+    el('headerStatus').textContent = value === 'selfhost' ? '셀프호스팅 상태 확인 중…' : value === 'cloud' ? '클라우드 상태 확인 중…' : '모드 선택 필요';
   }
   function fillServer(config) {
     if (dirty || !config) return;
@@ -62,15 +74,20 @@
       const value = state.backendMode || null; displayMode(value);
       if (value === 'selfhost') {
         el('serverStatus').textContent = '저장된 서버: ' + (state.connected ? `연결됨 · 서버 ${state.version}` : SRUI.errorText(state.error));
+        el('statusDot').className = 'sr-status-led sr-status-led--' + (state.connected ? 'ok' : 'bad');
+        el('headerStatus').textContent = state.connected ? `셀프호스팅 · 연결됨 · ${state.version}` : '셀프호스팅 · 연결 안 됨';
         return;
       }
       status.textContent = state.signedIn ? (state.name ? `${state.name} 계정으로 로그인됨` : '카카오 계정으로 로그인됨')
         : state.error === 'NOT_CONFIGURED' ? '배포용 Supabase 공개 설정이 필요합니다.' : '로그인하지 않았습니다.';
       login.hidden = state.signedIn || state.error === 'NOT_CONFIGURED'; logout.hidden = !state.signedIn;
+      el('statusDot').className = 'sr-status-led sr-status-led--' + (state.signedIn ? 'ok' : 'warn');
+      el('headerStatus').textContent = state.signedIn ? '클라우드 · 로그인됨' : '클라우드 · 로그인 필요';
     } catch {
       if (run !== generation) return;
-      if (activeMode === 'selfhost') el('serverStatus').textContent = '저장된 서버 연결 상태를 확인하지 못했습니다.';
-      else status.textContent = '계정 상태를 확인하지 못했습니다.';
+      el('statusDot').className = 'sr-status-led sr-status-led--bad';
+      if (activeMode === 'selfhost') { el('serverStatus').textContent = '저장된 서버 연결 상태를 확인하지 못했습니다.'; el('headerStatus').textContent = '셀프호스팅 상태 확인 실패'; }
+      else { status.textContent = '계정 상태를 확인하지 못했습니다.'; el('headerStatus').textContent = '계정 상태 확인 실패'; }
     }
   }
   function scheduleRefresh() {

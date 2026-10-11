@@ -19,9 +19,32 @@
 .sr-panel-header {display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:14px 16px;border-bottom:1px solid var(--sr-border);}
 .sr-header-copy {min-width:0;flex:1;}
 .sr-header-title {display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0;font-size:var(--sr-font-title);line-height:24px;font-weight:700;}
-.sr-header-caption {font-size:var(--sr-font-meta);line-height:20px;color:var(--sr-text-muted);overflow-wrap:anywhere;margin-top:3px!important;}
-.sr-plain-count {font-size:14px;line-height:22px;color:var(--sr-text-muted);font-weight:600;white-space:nowrap;}
+.sr-header-caption {display:flex;align-items:center;gap:6px;min-width:0;font-size:var(--sr-font-meta);line-height:20px;color:var(--sr-text-muted);overflow-wrap:anywhere;margin-top:4px!important;}
+.sr-header-caption>span {min-width:0;overflow-wrap:anywhere;}
+/* 건수 "알약": 안내문처럼 흘러가던 숫자를 작은 칩으로 분리한다. */
+.sr-plain-count {display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:var(--sr-surface-3);font-size:13px;line-height:1;color:var(--sr-text-muted);font-weight:650;white-space:nowrap;}
 .sr-header-actions {display:flex;align-items:center;gap:6px;flex:none;}
+/* 헤더 아이콘: 차량(car)·주소(pin)·앱 마크를 같은 톤 사각형 안에 둔다. */
+.sr-icon-badge {display:inline-flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;border-radius:9px;background:var(--sr-primary-soft);color:var(--sr-primary);}
+.sr-icon-badge svg {width:17px;height:17px;}
+.sr-icon-badge--brand {width:42px;height:42px;border-radius:11px;background:var(--sr-surface-2);border:1px solid var(--sr-border);padding:3px;}
+.sr-icon-badge--brand img {width:100%;height:100%;border-radius:7px;display:block;object-fit:contain;}
+/* 모드 뱃지 · 연결 상태 점 */
+.sr-mode-pill {display:inline-flex;align-items:center;margin-left:8px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;vertical-align:middle;background:var(--sr-surface-3);color:var(--sr-text-muted);border:1px solid var(--sr-border);}
+/* 라이트에서는 --sr-primary 그대로 쓰면 작은 글자 기준 4.5:1을 넘기지 못해 텍스트 전용으로 더 진한 톤을 쓴다(배경·테두리는 토큰 그대로). */
+.sr-mode-pill--selfhost {background:var(--sr-primary-soft);color:#1456b8;border-color:transparent;}
+:root[data-sr-theme="dark"] .sr-mode-pill--selfhost {color:var(--sr-primary);}
+.sr-mode-pill--cloud {background:var(--sr-tone-partial-bg);color:var(--sr-tone-partial-fg);border-color:var(--sr-tone-partial-border);}
+.sr-status-led {display:inline-block;width:7px;height:7px;border-radius:50%;flex:none;background:var(--sr-tone-unknown-base);}
+.sr-status-led--ok {background:var(--sr-tone-accept-base);}
+.sr-status-led--warn {background:var(--sr-tone-partial-base);}
+.sr-status-led--bad {background:var(--sr-tone-reject-base);}
+.sr-status-led--unknown {background:var(--sr-tone-unknown-base);}
+/* 차량 query = 번호판 뱃지, 주소 query = 핀 아이콘 + 말줄임(title로 전체 주소) */
+.sr-query-plate {display:inline-flex;align-items:center;padding:2px 8px;border:1.5px solid var(--sr-border);border-radius:6px;background:var(--sr-surface-2);color:var(--sr-text);font-size:13px;font-weight:700;letter-spacing:.2px;}
+.sr-query-address {display:flex;align-items:center;gap:5px;min-width:0;flex:1;}
+.sr-query-address-text {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sr-sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 .sr-button {min-height:34px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:5px 10px;background:var(--sr-surface);border:1px solid var(--sr-border);border-radius:var(--sr-radius-sm);color:var(--sr-text);font-size:13px!important;line-height:20px;white-space:nowrap;text-decoration:none;}
 .sr-button:hover {background:var(--sr-surface-2);}
 .sr-button--primary {background:var(--sr-primary-fill);border-color:var(--sr-primary-fill);color:white;}
@@ -39,17 +62,29 @@
 .sr-total {display:flex;align-items:baseline;gap:8px;margin-bottom:12px;font-size:14px;}
 .sr-total strong {font-size:26px;line-height:32px;font-weight:750;letter-spacing:-.4px;}
 .sr-numeric {font-variant-numeric:tabular-nums;}
-.sr-stat-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;}
-.sr-stat-grid--four {grid-template-columns:repeat(4,minmax(0,1fr));}
-.sr-stat {padding:0 12px;border-left:1px solid var(--sr-border);min-width:0;display:grid;grid-template-columns:auto 1fr;align-items:baseline;column-gap:8px;}
-.sr-stat:first-child {padding-left:0;border-left:0;}
-.sr-stat-label {grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:13px;line-height:20px;color:var(--sr-text-muted);}
-.sr-status-dot {width:6px;height:6px;border-radius:50%;background:var(--sr-tone-unknown-base);flex:none;}
+/* 처리 결과 / 처분 등을 "타일" 카드로 분리해 흰 바탕에 글만 나열되는 느낌을 줄인다. */
+.sr-section.sr-tile {margin:12px 16px;padding:14px;background:var(--sr-surface-2);border:1px solid var(--sr-border);border-radius:var(--sr-radius-sm);}
+.sr-section.sr-tile:last-child {margin-bottom:12px;}
+.sr-section.sr-tile + .sr-section.sr-tile {margin-top:-2px;}
+.sr-status-dot {width:7px;height:7px;border-radius:50%;background:var(--sr-tone-unknown-base);flex:none;}
 .sr-status-dot--accept {background:var(--sr-tone-accept-base);}
 .sr-status-dot--partial {background:var(--sr-tone-partial-base);}
 .sr-status-dot--reject {background:var(--sr-tone-reject-base);}
-.sr-stat-value {font-size:var(--sr-font-metric);line-height:31px;font-weight:750;letter-spacing:-.5px;}
-.sr-stat-percent {font-size:13px;line-height:20px;color:var(--sr-text-muted);}
+.sr-status-dot--fine {background:var(--sr-tone-fine-base);}
+.sr-status-dot--penalty {background:var(--sr-tone-penalty-base);}
+.sr-status-dot--unknown {background:var(--sr-tone-unknown-base);}
+/* 분포 막대: 값이 있는 구간만 이어 붙인 얇은 막대(0건을 꾸며 보여주지 않는다) */
+.sr-bar {display:flex;height:7px;border-radius:999px;overflow:hidden;background:var(--sr-surface-3);margin-bottom:10px;}
+.sr-bar-seg {height:100%;min-width:2px;}
+.sr-bar-seg--accept {background:var(--sr-tone-accept-base);}
+.sr-bar-seg--partial {background:var(--sr-tone-partial-base);}
+.sr-bar-seg--reject {background:var(--sr-tone-reject-base);}
+.sr-bar-seg--fine {background:var(--sr-tone-fine-base);}
+.sr-bar-seg--penalty {background:var(--sr-tone-penalty-base);}
+.sr-bar-seg--unknown {background:var(--sr-tone-unknown-base);}
+.sr-legend {display:flex;flex-wrap:wrap;gap:6px 16px;}
+.sr-legend-item {display:inline-flex;align-items:baseline;gap:6px;font-size:13px;line-height:20px;color:var(--sr-text-muted);white-space:nowrap;}
+.sr-legend-item b {font-size:14px;font-weight:650;color:var(--sr-text);}
 .sr-disposition-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;}
 .sr-disposition {display:flex;align-items:baseline;justify-content:space-between;gap:6px;min-width:0;font-size:13px;line-height:20px;}
 .sr-disposition span {color:var(--sr-text-muted);}
@@ -68,12 +103,20 @@
 .sr-officer-results span {white-space:nowrap;}
 .sr-officer-results b {font-weight:650;}
 .sr-record-list {min-width:0;}
-.sr-record {position:relative;min-width:0;padding:13px 16px;border-bottom:1px solid var(--sr-border);background:var(--sr-surface);}
+/* 카드 왼쪽 상태 악센트(결과 톤) + 소프트 레이어. 구분선 대신 여백·배경으로 묶는다. */
+.sr-record {position:relative;min-width:0;padding:13px 16px 13px 14px;border-bottom:1px solid var(--sr-border);border-left:3px solid var(--sr-tone-unknown-border);background:var(--sr-surface);transition:background-color .12s ease;}
 .sr-record:last-child {border-bottom:0;}
 .sr-record:hover {background:var(--sr-surface-2);}
-.sr-record-main {display:block;color:inherit;text-decoration:none;min-width:0;}
-.sr-record-top {display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0;margin-bottom:6px;}
+.sr-record--accept {border-left-color:var(--sr-tone-accept-base);}
+.sr-record--partial {border-left-color:var(--sr-tone-partial-base);}
+.sr-record--reject {border-left-color:var(--sr-tone-reject-base);}
+.sr-record--unknown {border-left-color:var(--sr-tone-unknown-border);}
+.sr-record-main {display:block;color:inherit;text-decoration:none;min-width:0;border-radius:6px;}
+.sr-record-main:focus-visible {outline:2px solid var(--sr-primary);outline-offset:-2px;}
+.sr-record-top {display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0;margin-bottom:7px;}
 .sr-record-key {font-size:15px;line-height:22px;font-weight:700;min-width:0;overflow-wrap:anywhere;}
+/* 번호판 뱃지: 둥근 테두리 + tabular 숫자로 살짝 도드라지게 */
+.sr-record-key.sr-plate {padding:4px 9px;border:1.5px solid var(--sr-border);border-radius:7px;background:var(--sr-surface-2);font-variant-numeric:tabular-nums;letter-spacing:.3px;}
 .sr-record-badges {display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;min-width:0;}
 .sr-badge {display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:13px;line-height:20px;font-weight:600;min-height:26px;padding:2px 8px;border:1px solid transparent;border-radius:6px;white-space:nowrap;}
 .sr-badge--accept {color:var(--sr-tone-accept-fg);background:var(--sr-tone-accept-bg);border-color:var(--sr-tone-accept-border);}
@@ -82,12 +125,17 @@
 .sr-badge--fine {color:var(--sr-tone-fine-fg);background:var(--sr-tone-fine-bg);border-color:var(--sr-tone-fine-border);}
 .sr-badge--penalty {color:var(--sr-tone-penalty-fg);background:var(--sr-tone-penalty-bg);border-color:var(--sr-tone-penalty-border);}
 .sr-badge--unknown {color:var(--sr-tone-unknown-fg);background:var(--sr-tone-unknown-bg);border-color:var(--sr-tone-unknown-border);}
+/* 분류 칩(5분류): 결과/처분과 혼동되지 않도록 중립 톤으로 구분 */
+.sr-badge--category {color:var(--sr-text-muted);background:var(--sr-surface-3);border-color:var(--sr-border);font-weight:650;}
 .sr-record-law {display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:14px;line-height:21px;margin-bottom:6px;}
 .sr-record-law span:first-child {min-width:0;overflow-wrap:anywhere;}
-.sr-rating {font-size:13px;color:var(--sr-text-muted);white-space:nowrap;}
-.sr-record-meta {display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 10px;font-size:13px;line-height:20px;color:var(--sr-text-muted);}
+.sr-rating {font-size:13px;color:var(--sr-tone-partial-base);white-space:nowrap;letter-spacing:1px;}
+.sr-record-meta {display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;font-size:13px;line-height:20px;color:var(--sr-text-muted);}
+.sr-meta-item {display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
 .sr-report-number {font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
-.sr-record-agency,.sr-record-address {font-size:14px;line-height:21px;overflow-wrap:anywhere;margin-top:4px!important;}
+.sr-record-agency,.sr-record-address {display:flex;align-items:flex-start;gap:6px;font-size:14px;line-height:21px;overflow-wrap:anywhere;margin-top:5px!important;}
+.sr-record-agency>span,.sr-record-address>span {min-width:0;overflow-wrap:anywhere;}
+.sr-record-agency svg,.sr-record-address svg {margin-top:3px;}
 .sr-record-address {color:var(--sr-text-muted);}
 .sr-record-foot {display:flex;align-items:baseline;flex-wrap:wrap;justify-content:space-between;gap:5px 12px;margin-top:5px;font-size:13px;color:var(--sr-text-muted);}
 .sr-list-heading {padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;font-weight:650;}
@@ -99,10 +147,9 @@
 @container sr-panel (max-width: 440px) {
  .sr-panel-header {gap:8px;padding-inline:14px;}
  .sr-section,.sr-record {padding-inline:14px;}
+ .sr-section.sr-tile {margin-inline:14px;}
  .sr-record-top {flex-wrap:wrap;gap:6px;}
  .sr-record-badges {justify-content:flex-start;}
- .sr-stat-grid--four {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 0;}
- .sr-stat-grid--four .sr-stat:nth-child(3) {border-left:0;padding-left:0;}
  .sr-copy-icon {display:none!important;}
 }
 @media (prefers-reduced-motion:reduce) {.sr-ui * {animation:none!important;transition:none!important;scroll-behavior:auto!important;}}
@@ -111,4 +158,5 @@
 .sr-ui details>summary.sr-officer-summary {font-size:14px;color:var(--sr-text);font-weight:650;min-height:32px;padding-top:4px;line-height:24px;}
 .sr-officer-summary span {font-size:13px;font-weight:400;color:var(--sr-primary);margin-left:8px;}
 .sr-ui .sr-officer-section details[open]>summary {margin-bottom:10px;}
-@container sr-panel (max-width:380px) {.sr-stat {column-gap:4px;padding-inline:8px;}.sr-stat-percent {font-size:13px;}}
+/* 아이콘 크기 변형: 기본 18px(.sr-ui svg)보다 작은 메타·칩용 */
+.sr-ui svg.sr-icon-sm {width:14px;height:14px;}
