@@ -57,6 +57,54 @@ test('worker: cloud expiry refresh once, gateway 401 retry once, offline and for
 const probe={status:'success',version:'3.0.0.0-dev',protocol_version:3,supported_client_protocols:[3],minimum_server_major:3};
 const selfRows=[{id:'9100000001',신고번호:'SPP-2026-123456',차량번호:'12가3456',처리상태:'수용'},{id:'9100000002',신고번호:null,처리상태:'처리중'}];
 const mockSelfhost=(url)=>new Response(JSON.stringify(url.endsWith('/server/version')?probe:url.endsWith('/crawl/status')?{status:'success',running:false,pending:0}:url.endsWith('/summary')?{status:'success',data:{total:2,processingCount:1,recent_answers:selfRows}}:url.endsWith('/crawl/done/ext')?{status:'success',done:true,changes:[{notification_kind:'duplicate',duplicate_change_type:'group_added',representative_report_number:'SPP-2026-123456'}]}:{status:'success',count:selfRows.length,data:selfRows}));
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+for (const change of ['mode', 'server', 'round-trip']) {
+  test(`worker: TEST_SERVER cannot cache success after a ${change} change during storage cleanup`, async () => {
+    const app = await worker({ local: { backendMode: 'selfhost', selfhost: config, [authKey]: session('a') }, fetchImpl: mockSelfhost });
+    const entered = deferred(), resume = deferred();
+    const remove = app.chrome.storage.local.remove;
+    let held = false;
+    app.chrome.storage.local.remove = async keys => {
+      await remove(keys);
+      if (keys === 'selfhostBlocked' && !held) { held = true; entered.resolve(); await resume.promise; }
+    };
+    const pending = app.send({ type: 'TEST_SERVER' }).then(data => ({ data }), error => ({ error }));
+    await entered.promise;
+    if (change === 'server') await app.send({ type: 'SAVE_SERVER', ...config, serverUrl: 'http://localhost:9999' });
+    else {
+      await app.send({ type: 'SET_MODE', backendMode: 'cloud' });
+      if (change === 'round-trip') await app.send({ type: 'SET_MODE', backendMode: 'selfhost' });
+    }
+    resume.resolve();
+    const result = await pending;
+    assert.equal(result.error?.message, 'STALE_SESSION');
+    assert.equal(app.stores.local.srStatusCache, undefined, 'the old test must not persist success under the new settings');
+    const state = await app.send({ type: 'STATUS' });
+    assert.equal(state.backendMode, change === 'mode' ? 'cloud' : 'selfhost');
+    if (change === 'mode') assert.equal(state.signedIn, true);
+  });
+}
+test('worker: STATUS round trip starts a new flight and old completion cannot clear that flight', async () => {
+  const old = deferred(), current = deferred(), entered = deferred();
+  let reads = 0;
+  const app = await worker({ local: { backendMode: 'cloud', selfhost: config, [authKey]: session('a') }, auth: {
+    getSession() { reads++; entered.resolve(); return reads === 1 ? old.promise : current.promise; },
+  } });
+  const first = app.send({ type: 'STATUS' });
+  await entered.promise;
+  await app.send({ type: 'SET_MODE', backendMode: 'selfhost' });
+  await app.send({ type: 'SET_MODE', backendMode: 'cloud' });
+  const second = app.send({ type: 'STATUS' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  old.resolve({ data: { session: session('a') } });
+  await first;
+  const third = app.send({ type: 'STATUS' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  current.resolve({ data: { session: session('a') } });
+  assert.equal((await second).signedIn, true);
+  assert.equal((await third).signedIn, true);
+  assert.equal(reads, 2, 'new-generation calls share only their own flight, even after the old flight completes');
+});
 test('worker: selfhost bypasses cloud auth/expiry, slow responses cannot survive a mode/server change',async()=>{
   let release=null, slow=false;
   const expired={...session('a'),expires_at:0};

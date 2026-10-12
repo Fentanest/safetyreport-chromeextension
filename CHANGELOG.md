@@ -2,6 +2,15 @@
 
 ## 미배포
 
+### 2026-10-13 — 릴리스 검수 P2 결함 4건 수정
+
+- `TEST_SERVER`가 성공한 뒤 저장소 정리 중 모드·서버가 바뀌면 이전 결과를 `STALE_SESSION`으로 폐기한다. 시작 당시 서버 identity와 요청 세대를 유지하고 캐시 저장 전 비동기 경계마다 재검증하여 다른 모드/서버의 연결 성공 캐시를 만들지 않는다.
+- `STATUS` 요청 공유 조건에 세대를 포함한다. `cloud → selfhost → cloud` 왕복 후에는 새 세션을 조회하고, 이전 요청의 완료가 새 요청의 flight를 지우지 않는다.
+- 설정 화면이 `STATUS_CHANGED`와 `srStatusCache` 변경을 받아 연결 실패·복구를 반영한다. 연결 상태 갱신은 입력 편집값과 진행 중/완료된 서버·클라우드 테스트를 보존하며, 진행 중인 설정 로딩과 겹쳐도 저장된 서버 입력값을 누락하지 않는다.
+- `cws-publish`가 `build`와 `release` 모두의 성공에 의존하도록 변경했다. 기존 태그가 다른 커밋을 가리켜 release가 실패하면 스토어 업로드·검토 제출도 실행하지 않는다.
+- 회귀 시험: 검수 결함 재현 8건은 수정 전 모두 실패·수정 후 모두 통과. 설정 로딩과 상태 알림의 교차 시험 1건도 추가했다. workflow 시험은 실제 태그 검사 셸을 가짜 git 응답(태그 없음/같은 커밋/충돌)으로 실행하며 원격 게시를 수행하지 않는다.
+- 검증: `npm test` 84건, `npm run test:contracts` 12건, `npm run build` 통과. 로컬 기본 빌드는 공개 클라우드 설정 미주입 상태이며, 전체 시험의 release-build fixture에서 공개 테스트 설정을 넣은 빌드·패키징도 검증한다. 운영 로그인·GitHub Actions 원격 실행·실제 스토어 제출은 수행하지 않았다. 커밋·push·VERSION/manifest 버전 변경 없음.
+
 ### 2026-10-13 — Chrome Web Store 자동 업로드·검토 제출 workflow 추가 (브랜치 sonnet/cws-upload)
 
 `.github/workflows/build.yml`에 비밀값을 받지 않는 기존 `build`(self-hosted) job 과 분리된

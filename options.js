@@ -12,7 +12,7 @@
   logout.innerHTML = SRUI.icon('logout') + '이 확장에서 로그아웃';
   let generation = 0, activeMode = null, modeEpoch = 0, contextGeneration = 0, dirty = false;
   let serverRevision = 0, serverOperation = 0, serverBusy = null;
-  let cloudOperation = 0, refreshTimer;
+  let cloudOperation = 0, refreshTimer, refreshSettings = false;
   const send = message => new Promise((resolve, reject) => chrome.runtime.sendMessage(message, response => {
     if (chrome.runtime.lastError) reject(new Error('REQUEST_FAILED'));
     else if (response?.error) reject(new Error(response.error));
@@ -64,10 +64,13 @@
   }
   async function refresh(loadSettings = false) {
     const run = ++generation;
+    // Keep an interrupted settings load pending until its values have been applied.
+    refreshSettings ||= loadSettings;
     try {
       if (loadSettings) {
         const config = await send({ type: 'GET_SETTINGS' }); if (run !== generation) return;
         displayMode(config.backendMode || null); fillServer(config.selfhost);
+        refreshSettings = false;
       }
       if (activeMode === 'selfhost') el('serverStatus').textContent = '저장된 서버 연결 확인 중…';
       const state = await send({ type: 'STATUS' }); if (run !== generation) return;
@@ -90,26 +93,36 @@
       else { status.textContent = '계정 상태를 확인하지 못했습니다.'; el('headerStatus').textContent = '계정 상태 확인 실패'; }
     }
   }
-  function scheduleRefresh() {
+  function scheduleRefresh(loadSettings = true) {
     // Invalidate a slow STATUS immediately; coalesce runtime/storage notifications.
-    generation++; contextGeneration++;
-    el('testResult').textContent = ''; el('cloudTestResult').textContent = '';
-    if (serverBusy?.test) finishServer(serverBusy);
-    cloudOperation++; el('testCloud').disabled = false;
-    clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refresh(true), 0);
+    generation++;
+    if (loadSettings) {
+      contextGeneration++;
+      el('testResult').textContent = ''; el('cloudTestResult').textContent = '';
+      if (serverBusy?.test) finishServer(serverBusy);
+      cloudOperation++; el('testCloud').disabled = false;
+    }
+    // A status-only event must not downgrade a queued settings/account refresh.
+    refreshSettings ||= loadSettings;
+    clearTimeout(refreshTimer); refreshTimer = setTimeout(() => {
+      const load = refreshSettings; refreshSettings = false;
+      refresh(load);
+    }, 0);
   }
   chrome.runtime.onMessage.addListener(message => {
-    // Not STATUS_CHANGED: it can fire from this very page's own pending TEST_SERVER/TEST_CLOUD
-    // call, and scheduleRefresh()'s invalidation would then wipe out that call's own result.
     if (message?.type === 'AUTH_CHANGED' || message?.type === 'WORKER_RESTARTED') scheduleRefresh();
+    // Live status updates also come from this page's own test: preserve its result/token.
+    else if (message?.type === 'STATUS_CHANGED') scheduleRefresh(false);
   });
   function accountIdentity(value) {
     try { return (typeof value === 'string' ? JSON.parse(value) : value)?.user?.id || null; }
     catch { return null; }
   }
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && Object.entries(changes).some(([key, value]) => key === 'backendMode' || key === 'selfhost'
+    if (area !== 'local') return;
+    if (Object.entries(changes).some(([key, value]) => key === 'backendMode' || key === 'selfhost'
       || (/^sb-.+-auth-token$/.test(key) && accountIdentity(value.oldValue) !== accountIdentity(value.newValue)))) scheduleRefresh();
+    else if (changes.srStatusCache) scheduleRefresh(false);
   });
   mode.addEventListener('change', async () => {
     const selected = mode.value;

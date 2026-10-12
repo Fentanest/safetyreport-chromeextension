@@ -155,9 +155,9 @@ jobs:
   # build 와 분리된 job — 비밀값(CWS_SERVICE_ACCOUNT_JSON)은 이 job(environment: cws)에만 전달되고
   # self-hosted 빌드 러너에는 전달되지 않는다. build 가 만든(테스트·계약 테스트·build·package 를 거친) ZIP
   # artifact 를 Chrome Web Store API v2 로 올리고(upload) 처리 완료를 확인한 뒤 검토 제출(publish)까지 한다.
-  # release(GitHub Release)와 마찬가지로 main 에서 실행된 workflow_dispatch 에서만 돈다.
+  # main 수동 실행에서만, 기존 태그 충돌 검사와 GitHub Release가 성공한 뒤 제출한다.
   cws-publish:
-    needs: build
+    needs: [build, release]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15

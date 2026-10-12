@@ -181,10 +181,10 @@ function sameStatusResult(a, b) {
     a.signedIn === b.signedIn && a.name === b.name;
 }
 // The actual live check (version probe / session read). Concurrent calls for the same
-// identity share one flight; a stale identity's result is never persisted or broadcast.
+// identity and generation share one flight; invalidated requests cannot be reused.
 function refreshStatus(identity) {
-  if (statusFlight?.identity === identity) return statusFlight.promise;
   const epoch = generation;
+  if (statusFlight?.identity === identity && statusFlight.epoch === epoch) return statusFlight.promise;
   const promise = (async () => {
     const result = await computeStatus();
     if (epoch !== generation) return result;
@@ -193,8 +193,8 @@ function refreshStatus(identity) {
     await chrome.storage.local.set({ srStatusCache: statusCache });
     if (changed) chrome.runtime.sendMessage({ type: 'STATUS_CHANGED' }).catch(() => {});
     return result;
-  })().finally(() => { if (statusFlight?.identity === identity) statusFlight = null; });
-  statusFlight = { identity, promise };
+  })().finally(() => { if (statusFlight?.promise === promise) statusFlight = null; });
+  statusFlight = { identity, epoch, promise };
   return promise;
 }
 // Popup/options show this instantly; a live check only runs when there is no cached
@@ -356,14 +356,26 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (type === 'SET_MODE') return changeSettings(message);
     if (type === 'SAVE_SERVER') return changeSettings(message);
     if (type === 'TEST_SERVER') {
+      const epoch = generation, config = settings.selfhost;
+      const assertCurrent = () => {
+        if (epoch !== generation || settings.backendMode !== 'selfhost' ||
+            config.serverUrl !== settings.selfhost.serverUrl || config.apiKey !== settings.selfhost.apiKey) throw new Error('STALE_SESSION');
+      };
       const value = await selfhost('connection', message);
-      const active = message.serverUrl === undefined || (message.serverUrl === settings.selfhost.serverUrl && message.apiKey === settings.selfhost.apiKey);
+      assertCurrent();
+      const active = message.serverUrl === undefined || (message.serverUrl === config.serverUrl && message.apiKey === config.apiKey);
       if (active) {
-        await chrome.storage.local.remove('selfhostBlocked'); await resetAlarm();
+        await chrome.storage.local.remove('selfhostBlocked');
+        assertCurrent();
+        await resetAlarm();
+        assertCurrent();
+        const identity = 'selfhost:' + await selfhostIdentity(config);
+        assertCurrent();
         // A successful explicit test already proves the active server: let STATUS reuse it
         // instead of making the next popup open repeat the same check it just confirmed.
-        statusCache = { identity: await statusIdentity(), result: { backendMode: 'selfhost', connected: true, version: value.version, error: null }, at: Date.now() };
+        statusCache = { identity, result: { backendMode: 'selfhost', connected: true, version: value.version, error: null }, at: Date.now() };
         await chrome.storage.local.set({ srStatusCache: statusCache });
+        assertCurrent();
       }
       return { ...value, active };
     }

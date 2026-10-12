@@ -85,7 +85,10 @@ async function options(page, backendMode = 'selfhost') {
     chrome.permissions = { request(_request, cb) { if (window.__holdPermission) window.__permission = cb; else cb(true); } };
     chrome.runtime = { lastError: null, onMessage: { addListener(fn) { window.__runtime.push(fn); } }, sendMessage(message, callback) {
       window.__calls.push(message.type);
-      if (message.type === 'GET_SETTINGS') callback({ data: structuredClone(window.__settings) });
+      if (message.type === 'GET_SETTINGS') {
+        if (window.__holdSettingsOnce) { window.__holdSettingsOnce = false; window.__settingsReply = () => callback({ data: structuredClone(window.__settings) }); }
+        else callback({ data: structuredClone(window.__settings) });
+      }
       if (message.type === 'STATUS') callback({ data: { backendMode: window.__settings.backendMode, signedIn: window.__signedIn, connected: !window.__failure, error: window.__failure ? 'SERVER_OFFLINE' : null, version: '3.0.0.0' } });
       if (message.type === 'SET_MODE') { window.__settings.backendMode = message.backendMode; window.__broadcast(); callback({ data: {} }); }
       if (message.type === 'SAVE_SERVER') {
@@ -100,6 +103,65 @@ async function options(page, backendMode = 'selfhost') {
   await page.goto(url('options.html')); await page.waitForFunction(expected => document.getElementById('backendMode').value === expected, backendMode);
   await page.waitForFunction(() => !document.getElementById('serverStatus').textContent.includes('중…'));
 }
+for (const notification of ['runtime', 'storage']) {
+  test(`options: ${notification} status updates reflect disconnect/recovery and preserve server test results`, async () => withPage(async page => {
+    await options(page);
+    await page.locator('#serverUrl').fill('http://localhost:9999');
+    await page.locator('#btnTest').click();
+    await page.waitForFunction(() => window.__tests.length === 1);
+    const update = failure => page.evaluate(({ failure, notification }) => {
+      window.__failure = failure;
+      if (notification === 'runtime') window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
+      else window.__storage.forEach(fn => fn({ srStatusCache: { newValue: {} } }, 'local'));
+    }, { failure, notification });
+    await update(true);
+    await page.waitForFunction(() => document.getElementById('statusDot').className.includes('--bad'), null, { timeout: 2000 });
+    assert.ok((await page.locator('#serverStatus').textContent()).includes('연결할 수 없습니다'));
+    assert.ok((await page.locator('#testResult').textContent()).includes('테스트 중'));
+    assert.equal(await page.locator('#btnTest').isDisabled(), true);
+    await page.evaluate(() => window.__tests.shift()());
+    await page.waitForFunction(() => document.getElementById('testResult').textContent.includes('입력값 연결 성공'));
+    const result = await page.locator('#testResult').textContent();
+    await update(false);
+    await page.waitForFunction(() => document.getElementById('statusDot').className.includes('--ok'), null, { timeout: 2000 });
+    assert.ok((await page.locator('#serverStatus').textContent()).includes('연결됨'));
+    assert.equal(await page.locator('#testResult').textContent(), result);
+    assert.equal(await page.locator('#serverUrl').inputValue(), 'http://localhost:9999');
+  }));
+}
+test('options: STATUS_CHANGED preserves pending and completed cloud connection tests', async () => withPage(async page => {
+  await options(page, 'cloud');
+  await page.locator('#testCloud').click();
+  await page.waitForFunction(() => typeof window.__cloudTest === 'function');
+  await page.evaluate(() => {
+    window.__signedIn = true;
+    window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
+  });
+  await page.waitForFunction(() => document.getElementById('headerStatus').textContent === '클라우드 · 로그인됨', null, { timeout: 2000 });
+  assert.equal(await page.locator('#testCloud').isDisabled(), true);
+  await page.evaluate(() => window.__cloudTest());
+  await page.waitForFunction(() => document.getElementById('cloudTestResult').textContent === '클라우드 조회 연결 성공');
+  await page.evaluate(() => {
+    window.__signedIn = false;
+    window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
+  });
+  await page.waitForFunction(() => document.getElementById('headerStatus').textContent === '클라우드 · 로그인 필요', null, { timeout: 2000 });
+  assert.equal(await page.locator('#cloudTestResult').textContent(), '클라우드 조회 연결 성공');
+}));
+test('options: a status update during a pending settings load still fills the saved server', async () => withPage(async page => {
+  await options(page);
+  await page.evaluate(() => {
+    window.__settings.selfhost.serverUrl = 'http://localhost:9999';
+    window.__holdSettingsOnce = true;
+    window.__broadcast();
+  });
+  await page.waitForFunction(() => typeof window.__settingsReply === 'function');
+  await page.evaluate(() => {
+    window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
+    window.__settingsReply();
+  });
+  await page.waitForFunction(() => document.getElementById('serverUrl').value === 'http://localhost:9999', null, { timeout: 2000 });
+}));
 test('options: active mode cannot become blank; runtime/storage changes synchronize and preserve edits', async () => withPage(async page => {
   await options(page);
   assert.equal(await page.locator('#backendMode option[value=""]').isDisabled(), true);

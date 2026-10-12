@@ -6,6 +6,29 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { readVersion } from '../scripts/version.mjs';
 
+test('release workflow: store submission requires the release job and its existing-tag guard to succeed', async () => {
+  const workflow = await readFile('.github/workflows/build.yml', 'utf8');
+  const job = name => workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][\\w-]*:|$(?![\\s\\S]))`, 'm'))?.[1];
+  const publish = job('cws-publish');
+  const needs = publish.match(/^    needs: (.+)$/m)?.[1].replace(/[\[\],]/g, ' ').split(/\s+/).filter(Boolean);
+  assert.ok(needs?.includes('release'), 'CWS must wait for the existing-tag check in release');
+  assert.ok(needs.includes('build'), 'the tested build artifact remains a direct dependency');
+  assert.doesNotMatch(publish, /always\(\)|!cancelled\(\)|continue-on-error:/);
+  const release = job('release');
+  const guard = release.match(/- name: Prevent releasing different code under an existing tag[\s\S]*?run: \|\n([\s\S]*?)(?=\n      - name:)/)?.[1];
+  assert.ok(guard, 'the release must retain its tag-conflict check');
+  assert.doesNotMatch(release, /continue-on-error:/);
+  for (const [exists, commit, succeeds] of [[false, 'other', true], [true, 'selected', true], [true, 'other', false]]) {
+    // Run the actual guard with a local git stub; no tags, commits or releases are written.
+    const script = `git() { if [[ "$1" == show-ref ]]; then return ${exists ? 0 : 1}; fi; echo ${commit}; }\n${guard}`;
+    const run = () => execFileSync('bash', ['-e', '-c', script], {
+      env: { ...process.env, RELEASE_TAG: 'v1.2.0', GITHUB_SHA: 'selected' }, stdio: 'pipe',
+    });
+    if (succeeds) assert.doesNotThrow(run);
+    else assert.throws(run, /이 버전 태그는 다른 커밋에 사용되었습니다/);
+  }
+});
+
 test('release version accepts product versions and rejects invalid Chrome/tag values', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'sr-version-'));
   const path = join(dir, 'VERSION');
