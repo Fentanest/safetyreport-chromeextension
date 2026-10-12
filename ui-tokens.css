@@ -5,15 +5,17 @@
  */
 :root, :host {
   --sr-font: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-  --sr-bg: #eef3f9;
+  --sr-bg: #f1f4f8;
   --sr-surface: #ffffff;
   --sr-surface-2: #f5f8fc;
   --sr-surface-3: #e9f0f9;
   --sr-border: #dbe3ee;
+  --sr-control-border: #8291a8;
+  --sr-transition: 140ms ease;
   --sr-text: #15213b;
   --sr-text-muted: #5a6a85;
-  --sr-primary: #1f6feb;
-  --sr-primary-fill: #1f6feb;
+  --sr-primary: #195fd1;
+  --sr-primary-fill: #195fd1;
   --sr-primary-soft: #e3edfd;
   --sr-shadow: 0 1px 2px rgba(21,33,59,.06), 0 4px 16px rgba(21,33,59,.06);
   --sr-focus: 0 0 0 3px rgba(31,111,235,.35);
@@ -26,7 +28,7 @@
   --sr-font-metric: 24px;
   color-scheme: light;
   --sr-tone-accept-base: #16a34a;
-  --sr-tone-accept-fg: #107a38;
+  --sr-tone-accept-fg: #107238;
   --sr-tone-accept-bg: #e3f4e9;
   --sr-tone-accept-border: #addfc0;
   --sr-tone-partial-base: #d97706;
@@ -38,7 +40,7 @@
   --sr-tone-reject-bg: #fbe5e5;
   --sr-tone-reject-border: #f3b3b3;
   --sr-tone-fine-base: #db2777;
-  --sr-tone-fine-fg: #c5236b;
+  --sr-tone-fine-fg: #b71d60;
   --sr-tone-fine-bg: #fbe5ef;
   --sr-tone-fine-border: #f2b3cf;
   --sr-tone-penalty-base: #7c3aed;
@@ -56,6 +58,7 @@
   --sr-surface-2: #1b1b1c;
   --sr-surface-3: #232324;
   --sr-border: #2d2d2f;
+  --sr-control-border: #737780;
   --sr-text: #f3f3f4;
   --sr-text-muted: #9ea0a4;
   --sr-primary: #60a5fa;
@@ -69,7 +72,7 @@
   --sr-tone-accept-bg: #143320;
   --sr-tone-accept-border: #14542c;
   --sr-tone-partial-base: #d97706;
-  --sr-tone-partial-fg: #db7e12;
+  --sr-tone-partial-fg: #efa34b;
   --sr-tone-partial-bg: #3f2911;
   --sr-tone-partial-border: #6c400e;
   --sr-tone-reject-base: #dc2626;

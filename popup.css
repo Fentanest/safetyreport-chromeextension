@@ -1,2 +1,15 @@
 *{box-sizing:border-box}html,body{margin:0;width:460px;height:570px;overflow:hidden;background:var(--sr-bg);color:var(--sr-text)}body{font:400 14px/21px var(--sr-font)}.sr-popup{height:100%;width:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--sr-surface);border:1px solid var(--sr-border);overflow:hidden}.sr-brand{display:flex;align-items:center;gap:10px;min-width:0}.sr-brand h1{font-size:16px;line-height:24px;margin:0;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:0}.sr-panel-header{min-height:64px}.sr-panel-content{overflow-y:auto;overflow-x:hidden}.sr-panel-content>*{min-width:0}.sr-panel-footer{min-height:46px}.sr-account-box{margin:16px;padding:22px 18px;background:var(--sr-surface-2);border:1px solid var(--sr-border);border-radius:12px}.sr-account-box h2{font-size:16px;line-height:24px;margin:0 0 8px}.sr-account-box p{font-size:14px;line-height:21px;margin:0 0 16px;color:var(--sr-text-muted)}.sr-kakao{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer}.sr-kakao img{display:block;max-width:100%;height:auto}.sr-kakao:focus-visible{outline:2px solid var(--sr-primary);outline-offset:3px}.sr-status-message{padding:15px 16px;font-size:13px;color:var(--sr-text-muted)}.sr-popup .sr-record{padding:12px 16px}.sr-popup .sr-record-key{font-size:15px}.sr-popup .sr-disposition-grid{gap:5px 12px}.sr-popup .sr-section{padding-block:12px}.sr-popup .sr-stat-value{font-size:22px}.sr-popup .sr-stat{padding-inline:8px;column-gap:4px}.sr-popup .sr-stat:first-child{padding-left:0}.sr-popup .sr-record-law:empty{display:none}.sr-popup .sr-record-top{flex-wrap:wrap}.sr-popup .sr-record-badges{justify-content:flex-start}.sr-popup .sr-list-heading{padding-top:13px}.sr-popup .sr-record-list{overflow:visible}.sr-popup .sr-more{margin-bottom:16px}@media(min-width:320px) and (max-width:459px){html,body{width:100vw}.sr-panel-header{padding-inline:12px}.sr-panel-footer{padding-inline:12px}}
 @media(min-height:320px) and (max-height:569px){html,body{height:100vh}}
+
+/* Keep the fixed action-popup frame and its single content scroller. */
+.sr-popup .sr-total {margin:0;gap:7px;color:var(--sr-text-muted);}
+.sr-popup .sr-total strong {font-size:26px;color:var(--sr-text);}
+.sr-popup .sr-panel-content>.sr-section:first-child:not(.sr-tile) {padding-block:12px;border-bottom:0;}
+.sr-popup .sr-section.sr-tile {margin-block:10px;padding:12px;}
+.sr-popup .sr-section.sr-tile + .sr-section.sr-tile {margin-top:0;}
+.sr-popup .sr-record {padding:12px;}
+.sr-popup .sr-list-heading small {display:inline-block;margin-left:6px;font-size:12px;font-weight:400;color:var(--sr-text-muted);}
+.sr-popup .sr-options-actions {display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.sr-popup #crawlResult:not(:empty) {margin-top:10px;font-size:13px;line-height:20px;overflow-wrap:anywhere;}
+.sr-popup .sr-account-box {border-radius:var(--sr-radius);}
+.sr-popup .sr-account-box p {margin-bottom:16px;}
