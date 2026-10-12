@@ -38,6 +38,8 @@ globalThis.SRUI = (() => {
     external: '<path d="M14 4h6v6"/><path d="M10 14L20 4"/><path d="M19 13.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5.5"/>',
     user: '<circle cx="12" cy="8.3" r="3.3"/><path d="M5 20c0-3.6 3.1-6.2 7-6.2s7 2.6 7 6.2"/>',
     info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 10.6v5.9"/><circle cx="12" cy="7.3" r="1" fill="currentColor" stroke="none"/>',
+    chevronUp: '<path d="M5.5 15.5L12 9l6.5 6.5"/>',
+    chevronDown: '<path d="M5.5 8.5L12 15l6.5-6.5"/>',
   };
   const icon = (name, cls = '') => ICONS[name] ? `<svg class="sr-icon${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name]}</svg>` : '';
   // 차량 query는 번호판 뱃지로, 주소 query는 핀 아이콘 + 말줄임(title로 전체 주소 확인)으로 보여준다.
