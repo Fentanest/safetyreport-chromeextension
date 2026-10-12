@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 const executable=process.env.SR_CHROMIUM_PATH || chromium.executablePath();
 const dir=await mkdtemp(join(tmpdir(),'sr-backend-browser-'));
-const logs=[];let running=false,done=false,doneRead,serverVersion='3.0.0.0-dev',protocols=[3],failure=0;
+const logs=[];let running=false,done=false,doneRead,serverVersion='3.0.0.0-dev',protocols=[3],failure=0,slowVersion=false;
 const record={id:'9100000001',신고번호:'SPP-2026-123456',차량번호:'12가3456',신고일:'2026-09-29',답변일:'2026-09-30',처리상태:'일부수용',범칙금_과태료:'과태료 40,000원',위반장소:'서울특별시 종로구 예시로 1',처리기관:'서울시 예시기관',담당자:'김담당',위반법규:'도로교통법',별점:5,신고내용:'EXCLUDED_PRIVATE_BODY'};
 const server=createServer((request,response)=>{
   const path=new URL(request.url,'http://localhost').pathname;
@@ -16,6 +16,7 @@ const server=createServer((request,response)=>{
   logs.push({path,client:request.headers['x-safetyreport-client'],version:request.headers['x-safetyreport-version'],protocol:request.headers['x-safetyreport-protocol'],keyValid:request.headers['x-api-key']==='browser-mock-key'});
   response.setHeader('Content-Type','application/json');
   if(failure){response.writeHead(failure);response.end(JSON.stringify({status:'error',code:failure===409?'CLIENT_PROTOCOL_UNSUPPORTED':'AUTH_REQUIRED'}));return;}
+  if(path.endsWith('/server/version')&&slowVersion){const body=JSON.stringify({status:'success',version:serverVersion,protocol_version:3,supported_client_protocols:protocols,minimum_server_major:3});setTimeout(()=>response.end(body),2500);return;}
   let data;
   if(path.endsWith('/server/version'))data={status:'success',version:serverVersion,protocol_version:3,supported_client_protocols:protocols,minimum_server_major:3};
   else if(path.endsWith('/summary'))data={status:'success',data:{total:2,acceptCount:0,partialCount:1,rejectCount:0,processingCount:1,tFineCount:1,tPenaltyCount:0,tRejectCount:0,tUnconfirmedCount:0,recent_answers:[record],last_crawl_time:'2026-10-03'}};
@@ -84,7 +85,20 @@ try{
   await popup.locator('#crawlStop').click();await popup.waitForFunction(()=>document.getElementById('crawlState').textContent==='크롤링 대기 중');
   const crawlButton=await popup.locator('#crawlStart').boundingBox();assert.ok(crawlButton.y+crawlButton.height<570);
   for(const theme of ['light','dark']){await options.locator('#theme').selectOption(theme);await popup.waitForFunction(t=>document.documentElement.dataset.srTheme===t,theme);await popup.locator('#content').evaluate(el=>el.scrollTop=0);await popup.screenshot({path:join(artifacts,`popup-${theme}.png`)});}
-  await context.route(/^https?:\/\/www\.safetyreport\.go\.kr\//,route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><html lang="ko"><body style="margin:30px"><label>차량번호 <input id="VHRNO"></label><p>주소 <span id="add1"></span></p><button style="position:fixed;right:20px;bottom:20px" id="native">원래 버튼</button><script>window.events=[];document.addEventListener("click",e=>events.push(e.target.id));document.addEventListener("input",e=>events.push("input:"+e.target.id));</script></body></html>'}));
+  // A popup reopen must show the cached connection instantly, never blocked on a live network
+  // check; make the next check artificially slow and confirm the icon click would not stall.
+  slowVersion=true;
+  const reopenStart=Date.now();
+  await popup.reload();await popup.waitForFunction(()=>document.getElementById('accountState').textContent.includes('셀프호스팅 · 연결됨'));
+  const reopenMs=Date.now()-reopenStart;
+  assert.ok(reopenMs<1500,`reopening the popup must show the cached status instantly, took ${reopenMs}ms`);
+  // The explicit refresh button must still be able to wait for a real (even slow) check.
+  const refreshStart=Date.now();
+  await popup.locator('#refresh').click();await popup.waitForFunction(()=>document.getElementById('accountState').textContent.includes('셀프호스팅 · 연결됨'));
+  assert.ok(Date.now()-refreshStart>=2000,'the manual refresh button must still force a live check');
+  slowVersion=false;
+  // Both the www and bare host: the real site serves identical content on each with no redirect.
+  await context.route(/^https?:\/\/(?:www\.)?safetyreport\.go\.kr\//,route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><html lang="ko"><body style="margin:30px"><label>차량번호 <input id="VHRNO"></label><p>주소 <span id="add1"></span></p><button style="position:fixed;right:20px;bottom:20px" id="native">원래 버튼</button><script>window.events=[];document.addEventListener("click",e=>events.push(e.target.id));document.addEventListener("input",e=>events.push("input:"+e.target.id));</script></body></html>'}));
   await context.grantPermissions(['clipboard-read'],{origin:'https://www.safetyreport.go.kr'});
   const page=await context.newPage();await page.goto('https://www.safetyreport.go.kr/#report');await page.bringToFront();
   await page.locator('#VHRNO').fill('12가3');await page.waitForTimeout(700);
@@ -119,6 +133,17 @@ try{
   assert.equal(font,'14px','HTTP Shadow DOM must load extension styles');
   assert.ok(!(await shadow(httpPage,'sr-vehicle-panel-host','this.textContent')).includes('browser-mock-key'));
   await httpPage.screenshot({path:join(artifacts,'vehicle-http.png')});await httpPage.close();
+  // The real site also serves the bare host (no "www") with identical content and no redirect;
+  // the widened content_scripts/web_accessible_resources matches must inject there too.
+  await context.grantPermissions(['clipboard-read'],{origin:'https://safetyreport.go.kr'});
+  const bareHostPage=await context.newPage();await bareHostPage.goto('https://safetyreport.go.kr/#report');
+  assert.ok(bareHostPage.url().startsWith('https://safetyreport.go.kr/'),'fixture must stay on the bare host');
+  await bareHostPage.locator('#VHRNO').fill('12가3456');await bareHostPage.locator('#VHRNO').click();await bareHostPage.waitForTimeout(900);
+  assert.equal(await bareHostPage.locator('#sr-vehicle-panel-host').isVisible(),true,'content script must inject on the bare host too');
+  assert.ok((await shadow(bareHostPage,'sr-vehicle-panel-host','this.textContent')).includes('일부수용'));
+  const bareFont=await shadow(bareHostPage,'sr-vehicle-panel-host',"getComputedStyle(this.querySelector('.sr-record-agency')).fontSize");
+  assert.equal(bareFont,'14px','bare-host Shadow DOM must load extension styles too');
+  await bareHostPage.screenshot({path:join(artifacts,'vehicle-bare-host.png')});await bareHostPage.close();
   const twin=await context.newPage();await twin.goto(`chrome-extension://${id}/options.html`);
   await twin.waitForFunction(()=>document.getElementById('backendMode').value==='selfhost');
   await options.locator('#backendMode').selectOption('cloud');await options.waitForFunction(()=>document.getElementById('cloudSettings').hidden===false);

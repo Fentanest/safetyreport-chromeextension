@@ -141,6 +141,39 @@ test('worker: HTTP 409 disables periodic retries across restart until an explici
   const restart=await worker({local:app.stores.local,fetchImpl:mockSelfhost});assert.equal(restart.alarms.size,0);
   rejected=false;await app.send({type:'TEST_SERVER'});assert.equal(app.alarms.size,1);
 });
+test('worker: STATUS shows the cached connection instantly; it only re-checks when stale, forced, or settings change',async()=>{
+  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:mockSelfhost});
+  const first=await app.send({type:'STATUS'});
+  assert.equal(first.backendMode,'selfhost');assert.equal(first.connected,true);assert.equal(first.version,probe.version);assert.equal(first.error,null);
+  const afterFirst=app.calls.filter(c=>c.url).length;assert.ok(afterFirst>0,'the first-ever check must still probe the server once');
+  // A popup reopened moments later must not repeat the network round trip.
+  const second=await app.send({type:'STATUS'});
+  assert.equal(second.connected,true);assert.equal(second.version,first.version);assert.equal(app.calls.filter(c=>c.url).length,afterFirst);
+  // The explicit refresh affordance must still force a live check.
+  const forced=await app.send({type:'STATUS',fresh:true});
+  assert.equal(forced.connected,true);assert.equal(forced.version,first.version);assert.ok(app.calls.filter(c=>c.url).length>afterFirst);
+  const afterForced=app.calls.filter(c=>c.url).length;
+  // Saving a different server is one of the few moments a check must happen again.
+  await app.send({type:'SAVE_SERVER',...config,serverUrl:'http://192.168.1.3:6819',apiKey:'another-private-key'});
+  const afterNewServer=await app.send({type:'STATUS'});
+  assert.equal(afterNewServer.connected,true);assert.ok(app.calls.filter(c=>c.url).length>afterForced);
+});
+test('worker: a cached connection status survives a worker restart without any network call',async()=>{
+  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:mockSelfhost});
+  const first=await app.send({type:'STATUS'});assert.equal(first.connected,true);
+  const restarted=await worker({local:app.stores.local,fetchImpl:async()=>{throw new Error('no network expected after a restart');}});
+  const restored=await restarted.send({type:'STATUS'});
+  assert.equal(restored.connected,true);assert.equal(restored.version,first.version);assert.equal(restarted.calls.filter(c=>c.url).length,0);
+});
+test('worker: a background incompatibility failure updates the cached STATUS without another round trip',async()=>{
+  let rejected=true;
+  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:async(url)=>url.endsWith('/server/version')?mockSelfhost(url):rejected?new Response(JSON.stringify({status:'error',code:'CLIENT_PROTOCOL_UNSUPPORTED'}),{status:409}):mockSelfhost(url)});
+  await assert.rejects(app.send({type:'SUMMARY'}),/CLIENT_PROTOCOL_UNSUPPORTED/);
+  const before=app.calls.filter(c=>c.url).length;
+  const state=await app.send({type:'STATUS'});
+  assert.equal(state.backendMode,'selfhost');assert.equal(state.connected,false);assert.equal(state.version,null);assert.equal(state.error,'CLIENT_PROTOCOL_UNSUPPORTED');
+  assert.equal(app.calls.filter(c=>c.url).length,before,'the failure already told STATUS; it must not probe again right away');
+});
 test('real Supabase SDK: inactive selfhost never refreshes an expired persisted cloud session',async()=>{
   const expired=JSON.stringify({...session('a'),expires_at:1});
   const app=await worker({realSdk:true,local:{backendMode:'selfhost',selfhost:config,[authKey]:expired},fetchImpl:mockSelfhost});
@@ -186,7 +219,8 @@ test('real Supabase SDK: a late response body cannot persist refreshed tokens af
 test('worker: official HTTP and HTTPS pages can query each backend but cannot access credentials or control it',async()=>{
   for(const backendMode of ['selfhost','cloud']){
     const app=await worker({local:{backendMode,selfhost:config,[authKey]:session('a')},fetchImpl:async url=>backendMode==='selfhost'?mockSelfhost(url):Response.json(fixture('search-vehicle-first-page'))});
-    for(const url of ['http://www.safetyreport.go.kr/#report','https://www.safetyreport.go.kr/#report']){
+    // The real site serves identical content on the bare host (no redirect either way); both must work.
+    for(const url of ['http://www.safetyreport.go.kr/#report','https://www.safetyreport.go.kr/#report','http://safetyreport.go.kr/#report','https://safetyreport.go.kr/#report']){
       const result=await app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',{url});
       assert.equal(result.summary.total,backendMode==='selfhost'?selfRows.length:fixture('search-vehicle-first-page').summary.total);
       assert.equal(result.apiKey,undefined);assert.equal(result.access_token,undefined);
@@ -195,10 +229,12 @@ test('worker: official HTTP and HTTPS pages can query each backend but cannot ac
     const networkCount=app.calls.filter(call=>call.url).length;
     for(const sender of [
       {url:'https://www.safetyreport.go.kr.evil.example/'},
+      {url:'https://safetyreport.go.kr.evil.example/'},
       {url:'https://www.safetyreport.go.kr@evil.example/'},
       {url:'https://evil.example/www.safetyreport.go.kr/'},
       {url:'ftp://www.safetyreport.go.kr/'},
-      {url:'http://safetyreport.go.kr/'},
+      {url:'ftp://safetyreport.go.kr/'},
+      {url:'https://wwwsafetyreport.go.kr/'},
       {url:'https://www.safetyreport.go.kr:444/'},
       {url:'http://www.safetyreport.go.kr/',frameId:1},
       {url:'https://www.safetyreport.go.kr/',id:'another-extension'},
@@ -208,7 +244,8 @@ test('worker: official HTTP and HTTPS pages can query each backend but cannot ac
 });
 test('manifest: official HTTP/HTTPS injection and Shadow DOM resources share the same exact host scope',()=>{
   const manifest=JSON.parse(readFileSync('manifest.json','utf8'));
-  const sites=['http://www.safetyreport.go.kr/*','https://www.safetyreport.go.kr/*'];
+  // The real site serves identical content with and without "www" (no redirect either way).
+  const sites=['http://www.safetyreport.go.kr/*','https://www.safetyreport.go.kr/*','http://safetyreport.go.kr/*','https://safetyreport.go.kr/*'];
   assert.deepEqual(manifest.content_scripts[0].matches,sites);
   assert.deepEqual(manifest.web_accessible_resources[0].matches,sites);
   assert.equal(manifest.content_scripts[0].all_frames ?? false,false);

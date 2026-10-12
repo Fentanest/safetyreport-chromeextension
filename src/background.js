@@ -8,6 +8,10 @@ const PUBLISHABLE_KEY = __SUPABASE_KEY__;
 const configured = Boolean(SUPABASE_URL && PUBLISHABLE_KEY);
 const AUTH_KEY = configured ? `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token` : null;
 const CACHE_TTL = 60_000;
+// STATUS is shown instantly from this durable cache; the live check below only
+// refreshes it in the background (settings change, prior failure, or elapsed TTL).
+const STATUS_TTL_OK = 5 * 60_000;
+const STATUS_TTL_ERROR = 30_000;
 const cache = new Map();
 const inflight = new Map();
 const activeControllers = new Set();
@@ -17,6 +21,8 @@ let clientGeneration = -1;
 let loginFlight = null;
 let refreshFlight = null;
 let blockedUntil = 0;
+let statusCache = null; // { identity, result, at } — survives worker restarts via srStatusCache
+let statusFlight = null;
 let client;
 let settings;
 let initialized = false;
@@ -36,6 +42,9 @@ const ready = (async () => {
   await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
   const [local, sync] = await Promise.all([chrome.storage.local.get(null), chrome.storage.sync.get(null)]);
   settings = migrateSettings(local, sync);
+  // A worker restart must not force a fresh network check: restore the last known status so
+  // the popup/options can show it immediately, same spirit as the crawl badge restore below.
+  if (local.srStatusCache && typeof local.srStatusCache === 'object') statusCache = local.srStatusCache;
   await chrome.storage.local.set(settings);
   await chrome.storage.sync.remove(['serverUrl', 'apiKey', 'backendMode', 'notifyCrawlDone', 'pollInterval']);
   await chrome.storage.local.remove(['serverUrl', 'apiKey', 'notifyCrawlDone', 'pollInterval', 'wasCrawling']);
@@ -141,20 +150,65 @@ async function currentSession() {
   return session;
 }
 
-async function status() {
-  await ready;
-  if (!settings.backendMode) return { backendMode: null, connected: false, error: 'MODE_REQUIRED' };
+// Identity changes (server/key, account) must invalidate the cache on their own, without
+// waiting for the TTL: cloud encodes the signed-in user straight from storage (no network).
+async function statusIdentity() {
+  if (settings.backendMode === 'selfhost') return 'selfhost:' + await selfhostIdentity(settings.selfhost);
+  if (settings.backendMode === 'cloud') {
+    if (!configured) return 'cloud:unconfigured';
+    const stored = (await chrome.storage.local.get(AUTH_KEY))[AUTH_KEY];
+    return 'cloud:' + (sessionIdentity(stored) || 'anonymous');
+  }
+  return null;
+}
+async function computeStatus() {
   if (settings.backendMode === 'selfhost') {
     try { const version = await selfhost('connection');
-      return { backendMode: 'selfhost', connected: true, version: version.version }; }
-    catch (error) { return { backendMode: 'selfhost', connected: false, error: error.message }; }
+      return { backendMode: 'selfhost', connected: true, version: version.version, error: null }; }
+    catch (error) { return { backendMode: 'selfhost', connected: false, version: null, error: error.message }; }
   }
   try {
     const session = await currentSession();
-    return { backendMode: 'cloud', connected: true, signedIn: true, name: typeof session.user.user_metadata?.full_name === 'string' ? session.user.user_metadata.full_name : null };
+    return { backendMode: 'cloud', connected: true, signedIn: true, error: null,
+      name: typeof session.user.user_metadata?.full_name === 'string' ? session.user.user_metadata.full_name : null };
   } catch (error) {
     return { backendMode: 'cloud', connected: false, signedIn: false, error: error.message === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : null };
   }
+}
+function sameStatusResult(a, b) {
+  if (!a || !b) return a === b;
+  return a.connected === b.connected && a.version === b.version && a.error === b.error &&
+    a.signedIn === b.signedIn && a.name === b.name;
+}
+// The actual live check (version probe / session read). Concurrent calls for the same
+// identity share one flight; a stale identity's result is never persisted or broadcast.
+function refreshStatus(identity) {
+  if (statusFlight?.identity === identity) return statusFlight.promise;
+  const epoch = generation;
+  const promise = (async () => {
+    const result = await computeStatus();
+    if (epoch !== generation) return result;
+    const changed = !sameStatusResult(statusCache?.result, result);
+    statusCache = { identity, result, at: Date.now() };
+    await chrome.storage.local.set({ srStatusCache: statusCache });
+    if (changed) chrome.runtime.sendMessage({ type: 'STATUS_CHANGED' }).catch(() => {});
+    return result;
+  })().finally(() => { if (statusFlight?.identity === identity) statusFlight = null; });
+  statusFlight = { identity, promise };
+  return promise;
+}
+// Popup/options show this instantly; a live check only runs when there is no cached
+// value yet, the caller explicitly asks for one (manual refresh), or it is stale/failed.
+async function status(message = {}) {
+  await ready;
+  if (!settings.backendMode) return { backendMode: null, connected: false, error: 'MODE_REQUIRED' };
+  const identity = await statusIdentity();
+  if (message.fresh) return refreshStatus(identity);
+  const cached = statusCache?.identity === identity ? statusCache : null;
+  if (!cached) return refreshStatus(identity);
+  const ttl = cached.result.connected ? STATUS_TTL_OK : STATUS_TTL_ERROR;
+  if (Date.now() - cached.at >= ttl) refreshStatus(identity).catch(() => {});
+  return cached.result;
 }
 
 async function login() {
@@ -190,6 +244,7 @@ async function login() {
       const savedSession = typeof persisted === 'string' ? JSON.parse(persisted) : persisted;
       if (settings.backendMode !== 'cloud' || savedSession?.access_token !== exchanged.data.session.access_token) throw new Error('STALE_SESSION');
       clearCache();
+      statusCache = null;
       if (settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
       return status();
     } finally {
@@ -203,6 +258,7 @@ async function logout() {
   await ready;
   if (settings.backendMode !== 'cloud') throw new Error('MODE_UNSUPPORTED');
   clearCache();
+  statusCache = null;
   if (configured) {
     const previous = (await chrome.storage.local.get(AUTH_KEY))[AUTH_KEY];
     const result = await cloudClient().auth.signOut({ scope: 'local' });
@@ -247,7 +303,7 @@ async function reports(mode, message) {
       refreshFlight ??= cloudClient().auth.refreshSession().finally(() => { refreshFlight = null; });
       const refreshed = await refreshFlight;
       if (generation !== epoch) throw new Error('STALE_SESSION');
-      if (refreshed.error || !refreshed.data.session) { clearCache(false); throw new Error('AUTH_REQUIRED'); }
+      if (refreshed.error || !refreshed.data.session) { clearCache(false); statusCache = null; throw new Error('AUTH_REQUIRED'); }
       response = await send(refreshed.data.session.access_token);
       payload = response.ok ? null : await read(response);
     }
@@ -279,7 +335,8 @@ const safeError = error => ERROR_CODES.has(error?.message) ? error.message : 'RE
 function senderRole(sender) {
   if (sender.id !== chrome.runtime.id) return null;
   if (sender.url === chrome.runtime.getURL('popup.html') || sender.url === chrome.runtime.getURL('options.html')) return 'trusted';
-  if (sender.frameId === 0 && /^https?:\/\/www\.safetyreport\.go\.kr\//.test(sender.url || '')) return 'content';
+  // The real site serves identical content on the bare host too (no redirect either way).
+  if (sender.frameId === 0 && /^https?:\/\/(?:www\.)?safetyreport\.go\.kr\//.test(sender.url || '')) return 'content';
   return null;
 }
 
@@ -290,7 +347,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     await ready;
     await settingsFlight;
     const type = message.type;
-    if (type === 'STATUS') return status();
+    if (type === 'STATUS') return status(message);
     if (type === 'SEARCH') return reports('search', message);
     if (type === 'NUMBERS') return reports('numbers', message);
     if (role !== 'trusted') throw new Error('FORBIDDEN');
@@ -301,7 +358,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (type === 'TEST_SERVER') {
       const value = await selfhost('connection', message);
       const active = message.serverUrl === undefined || (message.serverUrl === settings.selfhost.serverUrl && message.apiKey === settings.selfhost.apiKey);
-      if (active) { await chrome.storage.local.remove('selfhostBlocked'); await resetAlarm(); }
+      if (active) {
+        await chrome.storage.local.remove('selfhostBlocked'); await resetAlarm();
+        // A successful explicit test already proves the active server: let STATUS reuse it
+        // instead of making the next popup open repeat the same check it just confirmed.
+        statusCache = { identity: await statusIdentity(), result: { backendMode: 'selfhost', connected: true, version: value.version, error: null }, at: Date.now() };
+        await chrome.storage.local.set({ srStatusCache: statusCache });
+      }
       return { ...value, active };
     }
     if (type === 'TEST_CLOUD') { if (settings.backendMode !== 'cloud') throw new Error('MODE_UNSUPPORTED'); return reports('summary', { fresh: true }).then(() => ({ connected: true })); }
@@ -332,6 +395,7 @@ async function changeSettings(message) {
   const selfhostConfig = message.type === 'SAVE_SERVER' ? validateSettings(message) : null;
   if (selfhostConfig && !await chrome.permissions.contains({ origins: [selfhostConfig.serverUrl + '/*'] })) throw new Error('SERVER_PERMISSION_REQUIRED');
   clearCache();
+  statusCache = null;
   const operation = settingsFlight.then(async () => {
     settings = { ...settings, ...(selfhostConfig ? { selfhost: selfhostConfig } : { backendMode: message.backendMode }) };
     await chrome.storage.local.set(settings);
@@ -373,6 +437,13 @@ async function selfhost(operation, message = {}) {
       if (isActiveConfig && ['CLIENT_UPGRADE_REQUIRED','CLIENT_PROTOCOL_UNSUPPORTED','SERVER_UPGRADE_REQUIRED','COMPAT_INFO_MISSING'].includes(error.message)) {
         await chrome.storage.local.set({ selfhostBlocked: error.message });
         await chrome.alarms.clear(ALARM);
+        // A background poll just learned the server is permanently incompatible: surface
+        // it immediately rather than leaving a stale "connected" status cached for minutes.
+        if (epoch === generation) {
+          statusCache = { identity: await statusIdentity(), result: { backendMode: 'selfhost', connected: false, version: null, error: error.message }, at: Date.now() };
+          await chrome.storage.local.set({ srStatusCache: statusCache });
+          chrome.runtime.sendMessage({ type: 'STATUS_CHANGED' }).catch(() => {});
+        }
       }
       throw error;
     }
@@ -444,11 +515,12 @@ chrome.runtime.onStartup.addListener(async () => { await ready; await resetAlarm
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !initialized) return;
   if (Object.entries(changes).some(([key, value]) => /^sb-.+-auth-token$/.test(key) &&
-      sessionIdentity(value.oldValue) !== sessionIdentity(value.newValue))) clearCache();
+      sessionIdentity(value.oldValue) !== sessionIdentity(value.newValue))) { clearCache(); statusCache = null; }
   const changedMode = changes.backendMode && changes.backendMode.newValue !== settings.backendMode;
   const changedServer = changes.selfhost && JSON.stringify(changes.selfhost.newValue) !== JSON.stringify(settings.selfhost);
   if (changedMode || changedServer) {
     clearCache();
+    statusCache = null;
     settings = { ...settings, ...(changedMode ? { backendMode: validMode(changes.backendMode.newValue) ? changes.backendMode.newValue : null } : {}),
       ...(changedServer ? { selfhost: changes.selfhost.newValue || {} } : {}) };
     settingsFlight = settingsFlight.then(async () => { if (changedServer) await chrome.storage.local.remove('selfhostBlocked'); await resetAlarm(true); }).catch(() => {});

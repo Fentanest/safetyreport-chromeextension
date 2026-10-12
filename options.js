@@ -99,6 +99,8 @@
     clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refresh(true), 0);
   }
   chrome.runtime.onMessage.addListener(message => {
+    // Not STATUS_CHANGED: it can fire from this very page's own pending TEST_SERVER/TEST_CLOUD
+    // call, and scheduleRefresh()'s invalidation would then wipe out that call's own result.
     if (message?.type === 'AUTH_CHANGED' || message?.type === 'WORKER_RESTARTED') scheduleRefresh();
   });
   function accountIdentity(value) {

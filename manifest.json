@@ -29,7 +29,9 @@
     {
       "matches": [
         "http://www.safetyreport.go.kr/*",
-        "https://www.safetyreport.go.kr/*"
+        "https://www.safetyreport.go.kr/*",
+        "http://safetyreport.go.kr/*",
+        "https://safetyreport.go.kr/*"
       ],
       "js": [
         "shared-ui.js",
@@ -49,7 +51,9 @@
       ],
       "matches": [
         "http://www.safetyreport.go.kr/*",
-        "https://www.safetyreport.go.kr/*"
+        "https://www.safetyreport.go.kr/*",
+        "http://safetyreport.go.kr/*",
+        "https://safetyreport.go.kr/*"
       ]
     }
   ],

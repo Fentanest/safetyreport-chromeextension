@@ -48,7 +48,7 @@
     const run=++generation;data=null;account.textContent='계정 확인 중…';document.getElementById('serverHome').hidden=true;setDot('unknown');
     content.innerHTML='<p class="sr-status-message" role="status">내 신고를 확인하는 중…</p>';
     let status;
-    try{status=await send({type:'STATUS'});}catch{content.innerHTML='<p class="sr-status-message">확장 상태를 확인하지 못했습니다.</p>';return;}
+    try{status=await send({type:'STATUS',fresh});}catch{content.innerHTML='<p class="sr-status-message">확장 상태를 확인하지 못했습니다.</p>';return;}
     if(run!==generation)return;
     backendMode=status.backendMode||null;setMode(backendMode);
     if(!backendMode){account.textContent='모드 선택 필요';content.innerHTML=`<p class="sr-status-message">${SRUI.errorText('MODE_REQUIRED')}</p>`;return;}
@@ -71,7 +71,7 @@
       };
     }catch(error){if(run===generation&&document.getElementById('crawlState'))document.getElementById('crawlState').textContent=SRUI.errorText(error.message);}
   }
-  chrome.runtime.onMessage.addListener(message=>{if(message?.type==='AUTH_CHANGED'||message?.type==='WORKER_RESTARTED')load();});
+  chrome.runtime.onMessage.addListener(message=>{if(message?.type==='AUTH_CHANGED'||message?.type==='WORKER_RESTARTED'||message?.type==='STATUS_CHANGED')load();});
   document.getElementById('refresh').addEventListener('click',()=>load(true));
   document.getElementById('serverHome').addEventListener('click',async()=>{try{await send({type:'OPEN_SERVER'});}catch(error){account.textContent=SRUI.errorText(error.message);}});
   document.getElementById('settings').addEventListener('click',()=>chrome.runtime.openOptionsPage());

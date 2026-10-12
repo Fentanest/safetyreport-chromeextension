@@ -1,6 +1,6 @@
 # 나만의 안전신문고 Chrome 확장
 
-옵션 상단에서 **셀프호스팅 / 클라우드**를 선택합니다. 팝업과 차량·주소 입력 옆 패널에서 현재 연결과 조회 범위를 확인할 수 있습니다. 라이트·딥 다크·시스템 테마와 Shadow DOM 패널을 사용합니다. 차량번호는 NFC 정규화·공백 제거 후 6글자부터 부분 검색합니다. 신고 분류는 교통위반·주정차위반·안전신고·생활불편·기타 5종으로 표시하며, 각 신고 카드 첫 줄에 분류 칩으로 붙습니다(분류 정보가 없는 셀프호스팅 서버 응답은 칩을 만들지 않습니다).
+옵션 상단에서 **셀프호스팅 / 클라우드**를 선택합니다. 팝업과 차량·주소 입력 옆 패널에서 현재 연결과 조회 범위를 확인할 수 있습니다. 팝업은 열릴 때 마지막으로 확인된 연결 상태를 바로 보여주고, 실제 확인은 필요할 때만(설정 변경 직후, 이전 확인 실패 후, 시간이 꽤 지났을 때) 뒤에서 하며 바뀐 경우에만 화면을 갱신합니다. 팝업의 새로고침 버튼은 그 자리에서 다시 확인합니다. 라이트·딥 다크·시스템 테마와 Shadow DOM 패널을 사용합니다. 차량번호는 NFC 정규화·공백 제거 후 6글자부터 부분 검색합니다. 신고 분류는 교통위반·주정차위반·안전신고·생활불편·기타 5종으로 표시하며, 각 신고 카드 첫 줄에 분류 칩으로 붙습니다(분류 정보가 없는 셀프호스팅 서버 응답은 칩을 만들지 않습니다).
 
 ## 모드별 기능
 
@@ -62,7 +62,7 @@ GitHub Actions는 저장소 Variables `LOCAL_SUPABASE_URL`, `LOCAL_SUPABASE_PUBL
 
 실제 Chromium 설치 검증은 unpacked 확장을 지원하는 실행 파일을 `SR_CHROMIUM_PATH`에 지정해 `npm run test:backend-browser`와 `npm run test:action-popup`을 실행합니다. 전자는 production 코드와 실제 worker/content script를 로컬 mock 서버로 검사하고, 테스트 사본 manifest에 **그 mock origin과 알림만** 미리 허용합니다. 실제 권한 허용 팝업과 카카오 인증·운영 서버 검증은 별도입니다. 결과와 화면 캡처는 `artifacts/backend-browser/`, 검증 기록은 `CHANGELOG.md`에 남깁니다. OS Alt-Tab 자체는 headless 검증에 포함되지 않습니다.
 
-Supabase 통신의 필수 `host_permissions`는 빌드 시 지정한 프로젝트의 HTTPS origin 하나로 자동 설정됩니다. 안전신문고 패널의 정적 주입은 `content_scripts.matches`에서 `http://www.safetyreport.go.kr/*`, `https://www.safetyreport.go.kr/*` 두 주소에만 허용하고, Shadow DOM 스타일 리소스도 같은 범위에 공개합니다. background의 메시지 검증 역시 정확한 www 호스트의 최상위 페이지와 확장 ID만 허용합니다. 안전신문고 API를 background가 호출하거나 쿠키를 읽는 권한은 추가하지 않습니다. 개인 서버 주소는 설치 시 알 수 없으므로 manifest의 optional HTTP/HTTPS 범위 안에서, 저장/테스트 클릭 때 **입력한 origin 하나만** 요청합니다. `<all_urls>`나 전체 HTTP/HTTPS 권한을 한꺼번에 요청하지 않으며 CSP를 완화하지 않습니다.
+Supabase 통신의 필수 `host_permissions`는 빌드 시 지정한 프로젝트의 HTTPS origin 하나로 자동 설정됩니다. 안전신문고 패널의 정적 주입은 `content_scripts.matches`에서 `http://www.safetyreport.go.kr/*`, `https://www.safetyreport.go.kr/*`와 `www`가 없는 `http://safetyreport.go.kr/*`, `https://safetyreport.go.kr/*`(실제 사이트가 두 주소를 리다이렉트 없이 동일하게 서빙합니다) 네 주소에만 허용하고, Shadow DOM 스타일 리소스도 같은 범위에 공개합니다. background의 메시지 검증 역시 이 정확한 호스트들의 최상위 페이지와 확장 ID만 허용합니다. 안전신문고 API를 background가 호출하거나 쿠키를 읽는 권한은 추가하지 않습니다. 개인 서버 주소는 설치 시 알 수 없으므로 manifest의 optional HTTP/HTTPS 범위 안에서, 저장/테스트 클릭 때 **입력한 origin 하나만** 요청합니다. `<all_urls>`나 전체 HTTP/HTTPS 권한을 한꺼번에 요청하지 않으며 CSP를 완화하지 않습니다.
 
 클라우드 운영 적용 절차는 map `docs/integration/chromeextension/REPORT.md` §6을 따릅니다. 확장 ID의 `chrome.identity.getRedirectURL('supabase-auth')`를 기존 Supabase Auth Redirect URLs에 추가하고 기존 PC·모바일·지도 URL은 유지합니다. Origin allowlist와 OAuth Redirect URL은 서로 다른 설정입니다. 이 저장소의 로컬 빌드·테스트는 운영 배포나 스토어 제출을 뜻하지 않습니다.
 
