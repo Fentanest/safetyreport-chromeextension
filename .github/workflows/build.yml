@@ -151,3 +151,50 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+
+  # build 와 분리된 job — 비밀값(CWS_SERVICE_ACCOUNT_JSON)은 이 job(environment: cws)에만 전달되고
+  # self-hosted 빌드 러너에는 전달되지 않는다. build 가 만든(테스트·계약 테스트·build·package 를 거친) ZIP
+  # artifact 를 Chrome Web Store API v2 로 올리고(upload) 처리 완료를 확인한 뒤 검토 제출(publish)까지 한다.
+  # release(GitHub Release)와 마찬가지로 main 에서 실행된 workflow_dispatch 에서만 돈다.
+  cws-publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: cws
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Download tested extension ZIP
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: artifacts
+
+      # 외부 action 대신 Node 내장 crypto/fetch 로 직접 호출한다(scripts/cws-auth.mjs, scripts/cws-client.mjs).
+      # 서비스 계정 JSON → RS256 JWT → https://oauth2.googleapis.com/token 교환 → access_token 으로
+      # upload(zip 본문) → fetchStatus 폴링(시간 제한) → publish(검토 제출) 순서로 호출한다.
+      # 발급받은 토큰은 스크립트가 ::add-mask:: 로 로그에서 가린다. 오류 응답 본문은 토큰 외에는 그대로 노출한다
+      # (예: 같은 버전을 다시 올리는 등 Chrome Web Store API 가 주는 오류 메시지를 가리거나 바꾸지 않음).
+      # Chrome Web Store API 에는 버전별 "새 소식" 입력 필드가 없다(공식 문서·discovery 문서 확인, 2026-10)
+      # — 그래서 이 job 은 Play 쪽과 달리 출시 노트를 만들어 올리지 않는다.
+      - name: Upload to Chrome Web Store and submit for review
+        env:
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+        run: node scripts/cws-publish.mjs ${{ needs.build.outputs.asset }}

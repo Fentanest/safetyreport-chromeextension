@@ -2,6 +2,41 @@
 
 ## 미배포
 
+### 2026-10-13 — Chrome Web Store 자동 업로드·검토 제출 workflow 추가 (브랜치 sonnet/cws-upload)
+
+`.github/workflows/build.yml`에 비밀값을 받지 않는 기존 `build`(self-hosted) job 과 분리된
+`cws-publish`(`ubuntu-latest`, `environment: cws`, main 에서 실행된 `workflow_dispatch`에서만) job 을
+추가했다. `release`(GitHub Release) job 과 마찬가지로 `build`가 테스트·계약 테스트·빌드·패키징까지 거친
+ZIP artifact 를 받는다. push·릴리스·VERSION 변경 없음 — 워크플로·스크립트만 추가.
+
+- `scripts/cws-auth.mjs`: 서비스 계정 JSON(`secrets.CWS_SERVICE_ACCOUNT_JSON`)으로 RS256 JWT를 만들어
+  `https://oauth2.googleapis.com/token`(scope `https://www.googleapis.com/auth/chromewebstore`)과
+  직접 교환해 access_token 을 받는다. 외부 action 을 쓰지 않고 Node 내장 `crypto`/`fetch`만 쓴다.
+- `scripts/cws-client.mjs`: Chrome Web Store API v2 호출 — `POST .../upload/v2/publishers/{id}/items/{id}:upload`
+  (zip 바이트를 그대로 본문으로), `GET .../v2/.../items/{id}:fetchStatus`(업로드 처리 상태 폴링, 시간 제한),
+  `POST .../v2/.../items/{id}:publish`(검토 제출, 기본값은 `publishType` 기본값 DEFAULT_PUBLISH — 승인되면
+  자동 게시, `skipReview`는 켜지 않음). 엔드포인트·필드명은 공식 문서(`developer.chrome.com/docs/webstore/using-api`,
+  `/service-accounts`, `/api/reference/rest`)와 실제 discovery 문서(`$discovery/rest?version=v2`)로 확인했다.
+- `scripts/cws-publish.mjs`: 위 둘을 묶는 CLI(`node scripts/cws-publish.mjs <zip 경로>`, 필요 환경변수
+  `CWS_SERVICE_ACCOUNT_JSON`/`CWS_PUBLISHER_ID`/`CWS_EXTENSION_ID`). 발급받은 토큰은 받는 즉시
+  `::add-mask::`로 로그에서 가린다. Chrome Web Store API 오류 응답은 상태코드·본문을 그대로 노출한다
+  (토큰 제외) — 같은 버전을 다시 올리는 등의 오류 메시지를 가리거나 바꾸지 않는다.
+- Chrome Web Store API v2 에는 버전별 "새 소식"(release notes) 입력 필드가 없다(discovery 문서의
+  `PublishItemRequest`/업로드 요청 스키마 확인) — 그래서 모바일(Play)과 달리 출시 노트 생성·업로드를
+  추가하지 않았다. 설명(description) 문구도 바꾸지 않았다.
+- 단위 시험(가짜 RSA 키·가짜 fetch, 실제 네트워크 없음): `tests/cws-auth.test.mjs`(JWT 헤더·claim·서명
+  검증, 토큰 교환 성공/실패), `tests/cws-client.test.mjs`(URL·헤더·본문 구성, 오류 전달, fetchStatus
+  폴링의 성공/실패/시간초과), `tests/cws-publish.test.mjs`(CLI 전체 흐름 — 업로드 즉시 성공/폴링 뒤 성공/
+  업로드 실패 시 publish 미호출/필수 환경값 누락/JSON 파싱 오류). 모두 `tests/*.test.mjs` 로 `npm test`에
+  자동 포함됨.
+- 검증: `npm test` 75건(기존 57건 + 신규 18건) 통과, `npm run test:contracts` 12건 통과,
+  `SR_SUPABASE_URL`/`SR_SUPABASE_PUBLISHABLE_KEY` 고정값으로 `npm run build` 통과.
+  `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/build.yml` —
+  기존에도 있던 self-hosted 커스텀 라벨("235") 경고 2건만 남고(수정 전 원본에도 동일 — `build`/`release`
+  job) 새로 추가한 `cws-publish` job 에는 오류 없음.
+
+---
+
 ### 2026-10-12 — 팝업 즉시 표시 + 안전신문고 사이트 적용 범위 보정
 
 - 확장 아이콘을 눌러 팝업을 열 때마다 서버 연결을 처음부터 다시 확인하느라 화면이 잠깐씩 막히던 문제를 고쳤습니다. 이제 팝업을 열면 마지막으로 확인된 연결 상태를 바로 보여주고, 실제 확인은 화면 뒤에서 필요할 때만(설정을 바꾼 직후, 이전 확인이 실패한 뒤, 또는 시간이 꽤 지났을 때) 다시 하며 결과가 바뀐 경우에만 화면을 새로 고칩니다. 팝업의 새로고침 버튼을 누르면 예전처럼 그 자리에서 실시간으로 다시 확인합니다.
