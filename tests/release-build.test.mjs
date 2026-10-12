@@ -27,7 +27,7 @@ test('release build follows VERSION, includes cloud config, and replaces ZIP wit
   const dir = await mkdtemp(join(tmpdir(), 'sr-release-build-'));
   const run = script => execFileSync(process.execPath, [`scripts/${script}.mjs`], {
     cwd: dir,
-    env: { ...process.env, SR_SUPABASE_URL: 'https://release-fixture.supabase.co', SR_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_release_fixture' },
+    env: { ...process.env, SR_SUPABASE_URL: 'https://supabase.release-fixture.example', SR_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_release_fixture' },
     stdio: 'pipe',
   });
   try {
@@ -40,9 +40,9 @@ test('release build follows VERSION, includes cloud config, and replaces ZIP wit
     run('build');
     const manifest = JSON.parse(await readFile(join(dir, 'build/manifest.json'), 'utf8'));
     assert.equal(manifest.version, '9.8.7.6');
-    assert.deepEqual(manifest.host_permissions, ['https://release-fixture.supabase.co/*']);
+    assert.deepEqual(manifest.host_permissions, ['https://supabase.release-fixture.example/*']);
     const bundle = await readFile(join(dir, 'build/background.js'), 'utf8');
-    assert.ok(bundle.includes('https://release-fixture.supabase.co'));
+    assert.ok(bundle.includes('https://supabase.release-fixture.example'));
     assert.ok(bundle.includes('sb_publishable_release_fixture'));
     await writeFile(join(dir, 'build/obsolete.txt'), 'previous build file');
     run('package');

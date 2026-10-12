@@ -6,8 +6,9 @@ import { readVersion } from './version.mjs';
 const version = await readVersion();
 const url = (process.env.SR_SUPABASE_URL || '').replace(/\/+$/, '');
 const key = process.env.SR_SUPABASE_PUBLISHABLE_KEY || '';
-if ((url || key) && (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url) || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(key))) {
-  throw new Error('Set both SR_SUPABASE_URL and SR_SUPABASE_PUBLISHABLE_KEY to the existing project public values.');
+// 커뮤니티 서버는 클라우드(*.supabase.co)나 셀프호스트(예: https://supabase.worklazy.net)다 — 경로 없는 https 주소만 받는다.
+if ((url || key) && (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?$/.test(url) || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(key))) {
+  throw new Error('Set both SR_SUPABASE_URL (https origin, no path) and SR_SUPABASE_PUBLISHABLE_KEY to the community server public values.');
 }
 const out = resolve('build');
 await rm(out, { recursive: true, force: true });
