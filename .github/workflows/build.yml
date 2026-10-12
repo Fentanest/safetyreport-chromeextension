@@ -52,11 +52,11 @@ jobs:
 
       - name: Require cloud public build settings
         env:
-          SR_SUPABASE_URL: ${{ vars.SR_SUPABASE_URL }}
-          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SR_SUPABASE_PUBLISHABLE_KEY }}
+          SR_SUPABASE_URL: ${{ vars.LOCAL_SUPABASE_URL }}
+          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LOCAL_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           if [[ -z "$SR_SUPABASE_URL" || -z "$SR_SUPABASE_PUBLISHABLE_KEY" ]]; then
-            echo "::error::저장소 Variables에 SR_SUPABASE_URL과 SR_SUPABASE_PUBLISHABLE_KEY가 필요합니다."
+            echo "::error::저장소 Variables에 LOCAL_SUPABASE_URL과 LOCAL_SUPABASE_PUBLISHABLE_KEY가 필요합니다."
             exit 1
           fi
 
@@ -83,8 +83,8 @@ jobs:
       - name: Build configured extension
         run: npm run build
         env:
-          SR_SUPABASE_URL: ${{ vars.SR_SUPABASE_URL }}
-          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SR_SUPABASE_PUBLISHABLE_KEY }}
+          SR_SUPABASE_URL: ${{ vars.LOCAL_SUPABASE_URL }}
+          SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LOCAL_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Package extension
         run: npm run package

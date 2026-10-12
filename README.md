@@ -46,7 +46,7 @@
 
 Node.js 22 이상에서 `npm ci && npm test && npm run build`. `build/`가 unpacked 확장 디렉터리입니다. 기본 빌드는 클라우드 공개 설정 없이도 셀프호스팅을 사용할 수 있습니다. 클라우드 연결 빌드는 기존 프로젝트의 **공개** URL·publishable key를 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`에 지정합니다. service_role 키나 Kakao secret을 넣지 않습니다.
 
-GitHub Actions는 같은 이름의 저장소 Variables `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`를 빌드 환경에 주입합니다. Actions의 ZIP에는 이 공개 설정이 포함되므로 사용자가 옵션에 입력할 필요가 없습니다. 로컬 빌드는 해당 환경변수를 별도로 지정해야 하며 GitHub Variables를 자동으로 가져오지 않습니다.
+GitHub Actions는 저장소 Variables `LOCAL_SUPABASE_URL`, `LOCAL_SUPABASE_PUBLISHABLE_KEY`(다른 레포와 같은 이름, 2026-10-12부터 셀프호스트 커뮤니티 서버)를 빌드 환경의 `SR_SUPABASE_URL`, `SR_SUPABASE_PUBLISHABLE_KEY`로 주입합니다. Actions의 ZIP에는 이 공개 설정이 포함되므로 사용자가 옵션에 입력할 필요가 없습니다. 로컬 빌드는 해당 환경변수를 별도로 지정해야 하며 GitHub Variables를 자동으로 가져오지 않습니다.
 
 ### GitHub 빌드·릴리스
 

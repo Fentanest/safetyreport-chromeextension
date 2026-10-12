@@ -3,7 +3,7 @@
 ## 2026-10-12 — 1.2.0: 5분류·화면 개선
 
 - 제품 버전 1.2.0(`VERSION`, `manifest.json`). 안전신고·생활불편을 포함한 5분류와 차량·주소 패널, 팝업·옵션 화면 개선을 dev/main 에 통합했다.
-- 수동 빌드·릴리스 워크플로는 실행하지 않았다.
+- 빌드 워크플로가 GitHub Variables `LOCAL_SUPABASE_URL`·`LOCAL_SUPABASE_PUBLISHABLE_KEY`(셀프호스트 커뮤니티 서버)를 읽는다 — 다른 레포와 같은 이름. 이전 `SR_*` 변수(클라우드)는 더 쓰지 않는다.
 - 검증: npm test 54건과 npm run test:contracts 12건 통과.
 
 ---
