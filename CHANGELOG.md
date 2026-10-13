@@ -1,6 +1,8 @@
 # Changelog
 
-## 2026-10-13 — 차량 4글자·주소 자동 열림 복구 (astra/auto-open, 버전 변경 없음)
+## 2026-10-13 — 1.2.4: 차량 부분 번호 검색·신고 내역 창 자동 열림 개선
+
+### 2026-10-13 — 차량 4글자·주소 자동 열림 복구 (astra/auto-open, 버전 변경 없음)
 
 - 원인: 기존 `content.js:290`의 정규화 차량 6글자 제한에 더해 `vehicleChanged()`가 `reopen=true`(focus/click/compositionend)일 때만 `show()`를 호출했다. 빈 칸에 포커스한 뒤 숫자를 입력하면 최초에 숨겨진 상태가 `input`만으로 회복되지 않았다. X로 닫고 다른 값을 입력해도 `dismissed=false`만 바뀌고 `open=false`에 막혔다. `4c87550` 최초 cloud 전환부터 존재하며 `2eeabb4`(1.2.1 조회 race 수정)에도 그대로 남은 누락이다. 최근 `3b8846e` 동시 표시·배치 수정이 새로 도입한 회귀로 볼 코드 근거는 없다.
 - 주소: 기존 `addressChanged()`는 `#add1.textContent`만 읽고 텍스트 mutation/click/focus만 감시했다. input/textarea의 value, input/change, 이벤트 없이 실행한 `.value`/jQuery `.val()` 변경을 놓칠 수 있었다. 일반 요소의 텍스트 변경과 노드 교체는 이미 감지했으며, 실제 실패 화면에서 사용한 주소 노드 형태는 이번에 실사이트로 재확인하지 않았다. hash 재읽기는 차량이 activeElement일 때만 실행하는 제한도 있었다.
