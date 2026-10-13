@@ -11,7 +11,8 @@ const CHROME=process.env.CHROME_PATH||'/usr/bin/google-chrome';
 // real my-reports-v1 responses (contracts/my-reports/fixtures, captured from the map repo's local stack)
 const fx=name=>JSON.parse(readFileSync(resolve(root,`contracts/my-reports/fixtures/${name}.json`),'utf8'));
 const FIXTURES={first:fx('search-vehicle-first-page'),next:fx('search-vehicle-next-page'),managers:fx('search-managers-page'),
-  summary:fx('summary-first-page'),summaryNext:fx('summary-next-page'),numbers1:fx('numbers-first-page'),numbers2:fx('numbers-last-page')};
+  summary:fx('summary-first-page'),summaryNext:fx('summary-next-page'),numbers1:fx('numbers-first-page'),numbers2:fx('numbers-last-page'),
+  empty:fx('search-empty')};
 
 async function setup(page) {
   await page.addInitScript(({base,data})=>{
@@ -22,9 +23,10 @@ async function setup(page) {
     window.__clip=null;
     Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__clip=text;}}});
     window.__searchDelay=30;
+    window.__searchFirst={}; // optional per-kind override of the first SEARCH page, e.g. {address:data.empty}
     const pick=message=>message.type==='SUMMARY'?(message.cursor?data.summaryNext:data.summary)
       :message.type==='NUMBERS'?(message.cursor?(window.__numbers2||data.numbers2):(window.__numbers1||data.numbers1))
-      :message.part==='managers'?data.managers:message.cursor?data.next:data.first;
+      :message.part==='managers'?data.managers:message.cursor?data.next:(window.__searchFirst[message.kind]||data.first);
     const runtime={id:'abcdefghijklmnopabcdefghijklmnop',lastError:null,
       getURL:name=>`${base}${name}`,onMessage:{addListener(){}},
       sendMessage(message,respond){calls.push(message);if(message.type==='STATUS')respond({data:{backendMode:'cloud',signedIn:true,name:'시험 사용자'}});
@@ -234,5 +236,112 @@ test('options shows only the button that fits the account state (login xor logou
       assert.equal(await page.locator('#logout').isVisible(),signedIn,`logout visible, signedIn=${signedIn}`);
       await page.close();
     }
+  }finally{await browser.close();}
+});
+
+test('address and vehicle panels show at the same time, sized to content and not overlapping, at 1366/1920 widths',async()=>{
+  const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
+  try{
+    for(const width of [1366,1920]){
+      const page=await browser.newPage({viewport:{width,height:900}});
+      await setup(page);await page.goto(url('tests/fixture.html'));
+      await page.addScriptTag({url:url('shared-ui.js')});await page.addScriptTag({url:url('content.js')});
+      await page.locator('#add1').evaluate(el=>{el.textContent='서울특별시 종로구 예시로 1';});
+      await page.locator('#sr-address-panel-host .sr-record-key').first().waitFor();
+      await page.locator('#VHRNO').fill('12가3456');await page.locator('#VHRNO').click();
+      await page.locator('#sr-vehicle-panel-host .sr-record-key').first().waitFor();
+      const info=await page.evaluate(()=>{
+        const a=document.getElementById('sr-address-panel-host').getBoundingClientRect();
+        const v=document.getElementById('sr-vehicle-panel-host').getBoundingClientRect();
+        return {
+          addressHidden:document.getElementById('sr-address-panel-host').hidden,
+          vehicleHidden:document.getElementById('sr-vehicle-panel-host').hidden,
+          a:a.toJSON(),v:v.toJSON(),
+          overlap:a.left<v.right&&a.right>v.left&&a.top<v.bottom&&a.bottom>v.top,
+        };
+      });
+      assert.equal(info.addressHidden,false,`address hidden at ${width}`);
+      assert.equal(info.vehicleHidden,false,`vehicle hidden at ${width}`);
+      assert.equal(info.overlap,false,`panels overlap at ${width}: ${JSON.stringify(info)}`);
+      // both panels fit on screen (content-sized, clamped by viewport) instead of spilling past it
+      assert.ok(info.a.bottom<=901&&info.v.bottom<=901,`panel overflows viewport at ${width}: ${JSON.stringify(info)}`);
+      assert.ok(info.a.right<=width&&info.v.right<=width,JSON.stringify(info));
+      await page.close();
+    }
+  }finally{await browser.close();}
+});
+
+test('address panel shrinks/collapses instead of overlapping when the vehicle panel needs the same space, and both stay togglable',async()=>{
+  const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage({viewport:{width:600,height:700}});
+    await setup(page);await page.goto(url('tests/fixture.html'));
+    await page.addScriptTag({url:url('shared-ui.js')});await page.addScriptTag({url:url('content.js')});
+    // Move the vehicle input right under where the address panel (top-right) would render, forcing a conflict.
+    await page.locator('#VHRNO').evaluate(el=>{el.style.left='260px';el.style.top='200px';});
+    await page.locator('#add1').evaluate(el=>{el.textContent='서울특별시 종로구 예시로 1';});
+    await page.locator('#sr-address-panel-host .sr-record-key').first().waitFor();
+    await page.locator('#VHRNO').fill('12가3456');await page.locator('#VHRNO').click();
+    await page.locator('#sr-vehicle-panel-host .sr-record-key').first().waitFor();
+    await page.waitForTimeout(80); // let the rAF-scheduled position() pass settle
+    const info=await page.evaluate(()=>{
+      const addrHost=document.getElementById('sr-address-panel-host'),vHost=document.getElementById('sr-vehicle-panel-host');
+      const a=addrHost.getBoundingClientRect(),v=vHost.getBoundingClientRect();
+      return {
+        addressHidden:addrHost.hidden,vehicleHidden:vHost.hidden,
+        collapsedClass:addrHost.shadowRoot.querySelector('.sr-panel').classList.contains('sr-panel-collapsed'),
+        a:a.toJSON(),v:v.toJSON(),
+        overlap:a.left<v.right&&a.right>v.left&&a.top<v.bottom&&a.bottom>v.top,
+      };
+    });
+    assert.equal(info.addressHidden,false);assert.equal(info.vehicleHidden,false);
+    assert.equal(info.overlap,false,`still overlapping: ${JSON.stringify(info)}`);
+    assert.ok(info.collapsedClass,`expected the address panel to fold instead of overlapping: ${JSON.stringify(info)}`);
+    assert.ok(info.a.height<140,`folded address panel should be header-only: ${info.a.height}`);
+    // the user can still expand the folded address panel back open
+    await page.locator('#sr-address-panel-host').evaluate(host=>host.shadowRoot.querySelector('[data-action="toggle-collapse"]').click());
+    const expanded=await page.evaluate(()=>document.getElementById('sr-address-panel-host').shadowRoot.querySelector('.sr-panel').classList.contains('sr-panel-collapsed'));
+    assert.equal(expanded,false,'toggle-collapse should re-expand the address panel');
+    await page.close();
+  }finally{await browser.close();}
+});
+
+test('zero results collapse to a single line instead of empty result/disposition tiles, for both address and vehicle',async()=>{
+  const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage({viewport:{width:1366,height:900}});
+    await setup(page);await page.goto(url('tests/fixture.html'));
+    await page.evaluate(empty=>{window.__searchFirst={address:empty,vehicle:empty};},FIXTURES.empty);
+    await page.addScriptTag({url:url('shared-ui.js')});await page.addScriptTag({url:url('content.js')});
+    await page.locator('#add1').evaluate(el=>{el.textContent='부산광역시 중구 예시로 7';});
+    await page.locator('#VHRNO').fill('99가9999');await page.locator('#VHRNO').click();
+    const resolved=id=>{
+      const el=document.getElementById(id)?.shadowRoot?.querySelector('.sr-note');
+      return !!el && !el.textContent.includes('조회 중');
+    };
+    await page.waitForFunction(resolved,'sr-address-panel-host');
+    await page.waitForFunction(resolved,'sr-vehicle-panel-host');
+    const info=await page.evaluate(()=>{
+      const read=id=>{
+        const root=document.getElementById(id).shadowRoot;
+        return {
+          text:root.querySelector('.sr-panel-content').textContent.trim(),
+          tiles:root.querySelectorAll('.sr-tile').length,
+          officerSections:root.querySelectorAll('.sr-officer-section').length,
+          recordLists:root.querySelectorAll('.sr-record-list').length,
+          height:document.getElementById(id).getBoundingClientRect().height,
+        };
+      };
+      return {address:read('sr-address-panel-host'),vehicle:read('sr-vehicle-panel-host')};
+    });
+    assert.equal(info.address.text,'이 주소로 내 신고가 없습니다.');
+    assert.equal(info.vehicle.text,'이 차량으로 내 신고가 없습니다.');
+    for(const panel of [info.address,info.vehicle]){
+      assert.equal(panel.tiles,0,JSON.stringify(panel));
+      assert.equal(panel.officerSections,0,JSON.stringify(panel));
+      assert.equal(panel.recordLists,0,JSON.stringify(panel));
+      assert.ok(panel.height<180,`zero-result panel should be compact: ${JSON.stringify(panel)}`);
+    }
+    await page.close();
   }finally{await browser.close();}
 });

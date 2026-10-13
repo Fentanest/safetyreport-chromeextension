@@ -128,6 +128,28 @@ jobs:
             fi
           fi
 
+      - name: Prepare release body from release notes
+        id: release_body
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          notes_file="docs/releases/$RELEASE_TAG.md"
+          if [[ ! -f "$notes_file" ]]; then
+            echo "::error::릴리스 노트 파일이 없습니다: $notes_file"
+            exit 1
+          fi
+          body_file="$RUNNER_TEMP/release-body.md"
+          {
+            printf 'VERSION: %s\nCommit: %s\n\n' "$RELEASE_VERSION" "$GITHUB_SHA"
+            printf '%s\n' \
+              '첨부 ZIP을 풀고 chrome://extensions → 개발자 모드 → 압축해제된 확장 프로그램을 로드합니다.' \
+              'manifest.json이 있는 폴더를 선택하세요. 클라우드 공개 설정은 빌드에 포함되어 있습니다.'
+            printf '\n'
+            cat "$notes_file"
+          } > "$body_file"
+          echo "path=$body_file" >> "$GITHUB_OUTPUT"
+
       - name: Download tested extension ZIP
         uses: actions/download-artifact@v5
         with:
@@ -140,17 +162,12 @@ jobs:
           tag_name: ${{ needs.build.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: 나만의 안전신문고 Chrome 확장 v${{ needs.build.outputs.version }}
-          body: |
-            VERSION: ${{ needs.build.outputs.version }}
-            Commit: ${{ github.sha }}
-
-            첨부 ZIP을 풀고 chrome://extensions → 개발자 모드 → 압축해제된 확장 프로그램을 로드합니다.
-            manifest.json이 있는 폴더를 선택하세요. 클라우드 공개 설정은 빌드에 포함되어 있습니다.
+          body_path: ${{ steps.release_body.outputs.path }}
           files: ${{ needs.build.outputs.asset }}
           fail_on_unmatched_files: true
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
 
   # build 와 분리된 job — 비밀값(CWS_SERVICE_ACCOUNT_JSON)은 이 job(environment: cws)에만 전달되고
   # self-hosted 빌드 러너에는 전달되지 않는다. build 가 만든(테스트·계약 테스트·build·package 를 거친) ZIP
