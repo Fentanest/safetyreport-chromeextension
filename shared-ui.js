@@ -11,6 +11,11 @@ globalThis.SRUI = (() => {
   const OFFICIAL = /^https:\/\/www\.safetyreport\.go\.kr\/#mypage\/mysafereport\/[0-9A-Za-z_-]{1,40}$/;
   const linkOf = item => (typeof item.official_url === 'string' && OFFICIAL.test(item.official_url) ? item.official_url : null);
   const rate = value => (value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : `${Number(value)}%`);
+  const isCount = value => Number.isInteger(value) && value >= 0;
+  // Use the full manager aggregate, never the loaded report/manager page length or confirmed amount count.
+  const managerRate = (n, total) => isCount(n) && isCount(total) && total > 0
+    ? `${(Math.round(n * 1000 / total) / 10).toFixed(1)}% (${count(n)}/${count(total)}건)` : '—';
+  const managerRates = (accepted, fine, total) => `<div class="sr-officer-results sr-officer-rates"><span class="sr-numeric">수용률 ${managerRate(accepted, total)}</span><span class="sr-numeric">과태료처분율 ${managerRate(fine, total)}</span></div>`;
   const tone = status => ({ accepted: 'accept', partial: 'partial', rejected: 'reject' })[status] || 'unknown';
   const statusName = status => ({ accepted: '수용', partial: '일부 수용', rejected: '불수용', completed_unknown: '결과 미상' })[status] || '결과 미상';
   const dispositionName = value => ({ fine: '과태료', warning: '경고', penalty: '범칙금', none: '처분 없음', unknown: '처분 미확인' })[value] || '처분 미확인';
@@ -74,10 +79,10 @@ globalThis.SRUI = (() => {
   function managers(page, open = false) {
     const people = Array.isArray(page?.items) ? page.items : [];
     if (!people.length) return '';
-    if (page.backend === 'selfhost') return `<section class="sr-section sr-officer-section"><details ${open ? 'open' : ''}><summary class="sr-officer-summary">담당자별 ${count(people.length)}명</summary>${people.map(p => `<div class="sr-officer"><div class="sr-officer-top"><span>${esc(p.manager_name)}</span><b>${count(p.total)}건</b></div><div class="sr-officer-agency">${esc(p.agency_name_original)}</div><div class="sr-officer-results">수용 ${count(p.accepted)}건 · ${rate(Math.round(p.accepted / p.total * 1000) / 10)}</div></div>`).join('')}</details></section>`;
+    if (page.backend === 'selfhost') return `<section class="sr-section sr-officer-section"><details ${open ? 'open' : ''}><summary class="sr-officer-summary">담당자별 ${count(people.length)}명</summary><p class="sr-note">서버 검색 전체 신고 기준 · 처리중 포함</p>${people.map(p => `<div class="sr-officer"><div class="sr-officer-top"><span class="sr-officer-name">${esc(p.manager_name)}</span><b>${count(p.total)}건</b></div><div class="sr-officer-agency">${esc(p.agency_name_original)}</div>${managerRates(p.accepted, p.fine_count, p.total)}</div>`).join('')}</details></section>`;
     const more = page.next_cursor ? '<button class="sr-button sr-more" data-action="more-managers">담당자 더 보기</button>' : '';
     const unassigned = Number(page.unassigned_count) ? `<p class="sr-note">담당자 정보 없는 신고 ${count(page.unassigned_count)}건</p>` : '';
-    return `<section class="sr-section sr-officer-section"><details ${open ? 'open' : ''}><summary class="sr-officer-summary">담당자별 ${count(page.total_managers ?? people.length)}명 <span>수용률·과태료 보기</span></summary>${people.map(p => { const st = p.status || {}, f = p.fine_amount || {}; return `<div class="sr-officer"><div class="sr-officer-top"><span class="sr-officer-name">${esc(p.manager_name || '이름 없음')}</span><b>${count(p.total)}건</b></div><div class="sr-officer-agency">${esc(p.agency_name_current || p.agency_name_original || '')}</div><div class="sr-officer-results"><span>수용 ${count(st.accepted)}건 · ${rate(p.accept_rate)}</span><span>일부 수용 ${count(st.partial)}건</span><span>과태료 ${count(p.disposition?.fine)}건</span><span>확정 ${f.confirmed_sum_won === null || f.confirmed_sum_won === undefined ? '금액 없음' : money(f.confirmed_sum_won)}</span></div></div>`; }).join('')}${more}${unassigned}</details></section>`;
+    return `<section class="sr-section sr-officer-section"><details ${open ? 'open' : ''}><summary class="sr-officer-summary">담당자별 ${count(page.total_managers ?? people.length)}명 <span>수용률·과태료 보기</span></summary><p class="sr-note">고유 완료 신고 기준 · 결과 미상 포함</p>${people.map(p => { const st = p.status || {}, f = p.fine_amount || {}; return `<div class="sr-officer"><div class="sr-officer-top"><span class="sr-officer-name">${esc(p.manager_name || '이름 없음')}</span><b>${count(p.total)}건</b></div><div class="sr-officer-agency">${esc(p.agency_name_current || p.agency_name_original || '')}</div>${managerRates(st.accepted, p.disposition?.fine, p.total)}<div class="sr-officer-results"><span>일부 수용 ${isCount(st.partial) ? `${count(st.partial)}건` : '—'}</span><span>확정 과태료 ${f.confirmed_sum_won === null || f.confirmed_sum_won === undefined ? '금액 없음' : money(f.confirmed_sum_won)}</span></div></div>`; }).join('')}${more}${unassigned}</details></section>`;
   }
   // item = my-reports-v1 ReportRow(cloud) 또는 selfhostClient.projectRecord(selfhost) — 둘 다 같은 카드로 렌더링한다.
   function record(item) {

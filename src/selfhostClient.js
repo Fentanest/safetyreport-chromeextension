@@ -28,8 +28,12 @@ export function searchDto(payload, origin) {
     dispositions[disposition] = (dispositions[disposition] || 0) + 1;
     if (item.manager_name) {
       const key = JSON.stringify([item.agency_name_original, item.manager_name]);
-      const person = managers.get(key) || { manager_name: item.manager_name, agency_name_original: item.agency_name_original, total: 0, accepted: 0 };
-      person.total++; if (item.status === 'accepted') person.accepted++; managers.set(key, person);
+      const person = managers.get(key) || { manager_name: item.manager_name, agency_name_original: item.agency_name_original, total: 0, accepted: 0, fine_count: 0 };
+      person.total++;
+      if (item.status === 'accepted') person.accepted++;
+      // PC services/report_policy.py has_fine: only the disposition field, regardless of amount/status.
+      if (item.selfhost_disposition?.includes('과태료')) person.fine_count++;
+      managers.set(key, person);
     }
   }
   return { backend: 'selfhost', summary: { backend: 'selfhost', total: items.length, statuses, dispositions,

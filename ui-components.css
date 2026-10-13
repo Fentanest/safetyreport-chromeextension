@@ -97,10 +97,12 @@
 .sr-officer:last-child {border-bottom:0;padding-bottom:0;}
 .sr-officer:first-child {padding-top:0;}
 .sr-officer-top {display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+.sr-officer-top>b {flex-shrink:0;white-space:nowrap;}
 .sr-officer-name {font-weight:650;font-size:14px;overflow-wrap:anywhere;}
 .sr-officer-agency {font-size:13px;color:var(--sr-text-muted);line-height:20px;margin:2px 0 6px;overflow-wrap:anywhere;}
 .sr-officer-results {display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;line-height:20px;}
 .sr-officer-results span {white-space:nowrap;}
+.sr-officer-rates span {max-width:100%;white-space:normal;overflow-wrap:anywhere;}
 .sr-officer-results b {font-weight:650;}
 .sr-record-list {min-width:0;}
 /* 카드 왼쪽 상태 악센트(결과 톤) + 소프트 레이어. 구분선 대신 여백·배경으로 묶는다. */
