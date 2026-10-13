@@ -17,7 +17,7 @@
   const EDGE = 12, GAP = 10;
   const ADDRESS_WIDTH = 364, FOLDED_ADDRESS_WIDTH = 220, VEHICLE_WIDTH = 420, MIN_VEHICLE_WIDTH = 280;
   let backendMode = null;
-  let theme = 'system', scanQueued = false, positionQueued = false, refreshInputs = false;
+  let theme = 'system', scanQueued = false, positionQueued = false;
   const themeValue = () => theme === 'system'
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
   const updateTheme = () => Object.values(panels).forEach(panel => { panel.host.dataset.srTheme = themeValue(); });
@@ -222,7 +222,7 @@
   const failureText = SRUI.errorText;
   async function search(kind,retried=false) {
     const s=states[kind], query=s.query, generation=s.generation;
-    if (!s.open || s.dismissed || !query || s.loading) return;
+    if (!s.open || s.dismissed || !query || s.loading || s.composing) return;
     s.loading = true;
     render(kind);
     try {
@@ -284,19 +284,25 @@
   }
   function vehicleChanged(reopen=false) {
     const s=states.vehicle;
-    if (!s.node?.isConnected || s.node.isComposing) return;
+    if (!s.node?.isConnected) return;
+    const disabled=!!document.getElementById('chkNoVhrNo')?.checked;
+    if(s.composing && !disabled)return;
     const query=normalizeVehicle(s.node.value);
-    if(query!==s.query){invalidate('vehicle');s.query=query;s.dismissed=false;}
-    if([...query].length<6 || document.getElementById('chkNoVhrNo')?.checked){hide('vehicle');return;}
-    if(reopen)show('vehicle');
-    if(!s.open || s.dismissed)return;
+    const changed=query!==s.query, availabilityChanged=disabled!==s.disabled;
+    if(changed || availabilityChanged){invalidate('vehicle');s.query=query;s.disabled=disabled;}
+    if(!changed && !availabilityChanged && !reopen)return;
+    if([...query].length<4 || disabled){hide('vehicle');return;}
+    show('vehicle');
     if(s.data && Date.now()-s.loadedAt>=DATA_TTL)invalidate('vehicle');
     if(s.data){render('vehicle');return;}
     render('vehicle');
     clearTimeout(s.timer);s.timer=setTimeout(()=>search('vehicle'),600);
   }
   function addressChanged(reopen=false) {
-    const s=states.address, query=normalizeAddress(s.node?.textContent);
+    const s=states.address;
+    if(!s.node?.isConnected || s.composing)return;
+    // #add1 may be a text container or an input populated by the address picker.
+    const query=normalizeAddress('value' in s.node ? s.node.value : s.node.textContent);
     if(query===s.query && !reopen)return;
     if(query!==s.query || (s.data && Date.now()-s.loadedAt>=DATA_TTL))invalidate('address');
     s.query=query;s.dismissed=false;
@@ -307,30 +313,40 @@
   function rebind() {
     const input=document.getElementById('VHRNO'), v=states.vehicle;
     if(input!==v.node){
-      v.controller?.abort();invalidate('vehicle');hide('vehicle');v.node=input;v.query='';
+      v.controller?.abort();invalidate('vehicle');hide('vehicle');v.node=input;v.query='';v.composing=false;
       if(input){
         v.controller=new AbortController();const signal=v.controller.signal;
         input.addEventListener('input',()=>vehicleChanged(),{signal});
+        input.addEventListener('change',()=>vehicleChanged(),{signal});
         input.addEventListener('focus',()=>vehicleChanged(true),{signal});
         input.addEventListener('click',()=>vehicleChanged(true),{signal});
-        input.addEventListener('compositionend',()=>vehicleChanged(true),{signal});
+        input.addEventListener('compositionstart',()=>{v.composing=true;clearTimeout(v.timer);},{signal});
+        input.addEventListener('compositionend',()=>{v.composing=false;vehicleChanged(true);},{signal});
       }
     }
     const address=document.getElementById('add1'), a=states.address;
     if(address!==a.node){
-      a.controller?.abort();a.observer?.disconnect();invalidate('address');hide('address');a.node=address;a.query='';
+      a.controller?.abort();a.observer?.disconnect();invalidate('address');hide('address');a.node=address;a.query='';a.composing=false;
       if(address){
         a.controller=new AbortController();const signal=a.controller.signal;
         address.addEventListener('click',()=>addressChanged(true),{signal});
         address.addEventListener('focus',()=>addressChanged(true),{signal});
-        a.observer=new MutationObserver(()=>addressChanged());a.observer.observe(address,{childList:true,characterData:true,subtree:true});addressChanged();
+        address.addEventListener('input',()=>addressChanged(),{signal});
+        address.addEventListener('change',()=>addressChanged(),{signal});
+        address.addEventListener('compositionstart',()=>{a.composing=true;clearTimeout(a.timer);},{signal});
+        address.addEventListener('compositionend',()=>{a.composing=false;addressChanged(true);},{signal});
+        a.observer=new MutationObserver(()=>addressChanged());a.observer.observe(address,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['value']});
       }
     }
-    if(refreshInputs){refreshInputs=false;addressChanged();if(document.activeElement===v.node)vehicleChanged(true);}
+    // Also read prefilled/reused nodes, without relying on focus after SPA navigation.
+    vehicleChanged();addressChanged();
   }
   function queueScan(){if(scanQueued)return;scanQueued=true;requestAnimationFrame(()=>{scanQueued=false;rebind();});}
   new MutationObserver(queueScan).observe(document.documentElement,{childList:true,subtree:true});
   rebind();
+  // Setting input.value (including jQuery.val) emits neither an event nor a DOM mutation.
+  // Compare two values only; unchanged values do not render, reset debounce, or send requests.
+  setInterval(()=>{if(!document.hidden)rebind();},300);
   document.addEventListener('pointerdown',event=>{
     const path=event.composedPath();
     // A click on either tracked input or either panel is never "outside" — it's the user actively using one of
@@ -344,13 +360,13 @@
   },true);
   document.addEventListener('keydown',event=>{if(event.key==='Escape'){if(states.vehicle.open)hide('vehicle',true);else if(states.address.open)hide('address',true);}});
   document.addEventListener('scroll',queuePosition,true);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)queuePosition();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){queueScan();queuePosition();}});
   window.addEventListener('focus',queuePosition);
-  document.addEventListener('change',event=>{if(event.target?.id==='chkNoVhrNo'&&event.target.checked)hide('vehicle',true);},true);
+  document.addEventListener('change',event=>{if(event.target?.id==='chkNoVhrNo')vehicleChanged();},true);
   window.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('scroll',queuePosition);
-  window.addEventListener('hashchange',()=>{for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);states[kind].query='';}refreshInputs=true;queueScan();});
+  window.addEventListener('hashchange',()=>{for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);states[kind].query='';states[kind].composing=false;}queueScan();});
   chrome.runtime.onMessage.addListener(message=>{
     if(message?.type==='AUTH_CHANGED'||message?.type==='DATA_INVALIDATED'){backendMode=null;for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);}}
     if(message?.type==='WORKER_RESTARTED'){

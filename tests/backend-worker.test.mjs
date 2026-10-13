@@ -5,6 +5,32 @@ import { readFileSync } from 'node:fs';
 import { worker, session, authKey, SUPA } from './worker-harness.mjs';
 const fixture = name => JSON.parse(readFileSync(`contracts/my-reports/fixtures/${name}.json`,'utf8'));
 const config = { serverUrl:'http://localhost:6819', apiKey:'private-server-key', notifyCrawlDone:true, pollInterval:5 };
+test('worker: four-character cloud query reaches server, short-query rejection is explicit, and supported results share flight/cache', async () => {
+  let supported = false;
+  const app = await worker({ local: { backendMode: 'cloud', [authKey]: session('a') }, fetchImpl: async (_url, options) => {
+    const body = JSON.parse(options.body); assert.equal(body.query, '5902');
+    return supported
+      ? new Response(JSON.stringify({ ...fixture('search-empty'), kind: 'vehicle', query_normalized: '5902' }))
+      : new Response(JSON.stringify({ error: { code: 'QUERY_LENGTH' } }), { status: 400 });
+  } });
+  const query = { type: 'SEARCH', kind: 'vehicle', query: '5902' };
+  await assert.rejects(app.send(query, 'content'), /CLOUD_SHORT_VEHICLE_UNSUPPORTED/);
+  assert.equal(app.calls.filter(c => c.url).length, 1);
+  supported = true;
+  const [first, second] = await Promise.all([app.send(query, 'content'), app.send(query, 'content')]);
+  assert.equal(first.summary.total, 0); assert.deepEqual(first, second);
+  await app.send(query, 'content'); assert.equal(app.calls.filter(c => c.url).length, 2);
+});
+test('worker: four-character selfhost search passes both validators and reuses its cache', async () => {
+  const app = await worker({ local: { backendMode: 'selfhost', selfhost: config }, fetchImpl: async url => {
+    if (url.endsWith('/server/version')) return new Response(JSON.stringify({ status: 'success', version: '3.0.0', protocol_version: 3, supported_client_protocols: [3], minimum_server_major: 3 }));
+    assert.ok(url.endsWith('/vehicle/5902'));
+    return new Response(JSON.stringify({ status: 'success', count: 0, data: [] }));
+  } });
+  const query = { type: 'SEARCH', kind: 'vehicle', query: '5902' };
+  assert.equal((await app.send(query, 'content')).summary.total, 0);
+  await app.send(query, 'content'); assert.equal(app.calls.filter(c => c.url).length, 2);
+});
 test('worker: durable migration, trusted storage, explicit selection and distinct logout',async()=>{
   const app=await worker({sync:config});
   assert.equal(app.stores.local.backendMode,'selfhost');assert.deepEqual(app.stores.local.selfhost,config);
@@ -23,7 +49,7 @@ test('worker: durable migration, trusted storage, explicit selection and distinc
 test('worker: content cannot read settings or control crawl; unknown destination never proxies',async()=>{
   const app=await worker({local:{backendMode:'cloud',[authKey]:session('a')}});
   for(const type of ['GET_SETTINGS','SAVE_SERVER','SET_MODE','CRAWL_START','SUMMARY','LOGIN','LOGOUT'])await assert.rejects(app.send({type},'content'),/FORBIDDEN/);
-  await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'12가3',url:'http://evil'},'content'),/INVALID_QUERY/);
+  await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'590',url:'http://evil'},'content'),/INVALID_QUERY/);
   await assert.rejects(app.send({type:'FETCH_URL',url:'http://evil'},'content'),/FORBIDDEN/);
   assert.equal(app.calls.filter(call=>call.url).length,0);
 });
@@ -115,7 +141,7 @@ test('worker: selfhost bypasses cloud auth/expiry, slow responses cannot survive
   }});
   await app.send({type:'STATUS'});await app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content');
   await app.send({type:'SUMMARY'});assert.equal(app.calls.filter(c=>c.auth).length,0);
-  await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'12가3'},'content'),/INVALID_QUERY/);
+  await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'590'},'content'),/INVALID_QUERY/);
   slow=true;const query={type:'SEARCH',kind:'vehicle',query:'13가3456'};
   const old=app.send(query,'content'),checked=assert.rejects(old,/STALE_SESSION/);
   while(!release)await new Promise(r=>setTimeout(r,0));

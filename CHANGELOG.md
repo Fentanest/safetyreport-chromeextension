@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-13 — 1.2.4: 차량 부분 번호 검색·신고 내역 창 자동 열림 개선
+
+### 2026-10-13 — 차량 4글자·주소 자동 열림 복구 (astra/auto-open, 버전 변경 없음)
+
+- 원인: 기존 `content.js:290`의 정규화 차량 6글자 제한에 더해 `vehicleChanged()`가 `reopen=true`(focus/click/compositionend)일 때만 `show()`를 호출했다. 빈 칸에 포커스한 뒤 숫자를 입력하면 최초에 숨겨진 상태가 `input`만으로 회복되지 않았다. X로 닫고 다른 값을 입력해도 `dismissed=false`만 바뀌고 `open=false`에 막혔다. `4c87550` 최초 cloud 전환부터 존재하며 `2eeabb4`(1.2.1 조회 race 수정)에도 그대로 남은 누락이다. 최근 `3b8846e` 동시 표시·배치 수정이 새로 도입한 회귀로 볼 코드 근거는 없다.
+- 주소: 기존 `addressChanged()`는 `#add1.textContent`만 읽고 텍스트 mutation/click/focus만 감시했다. input/textarea의 value, input/change, 이벤트 없이 실행한 `.value`/jQuery `.val()` 변경을 놓칠 수 있었다. 일반 요소의 텍스트 변경과 노드 교체는 이미 감지했으며, 실제 실패 화면에서 사용한 주소 노드 형태는 이번에 실사이트로 재확인하지 않았다. hash 재읽기는 차량이 activeElement일 때만 실행하는 제한도 있었다.
+- 수정: 차량은 정규화 4글자부터 변경 즉시 패널을 열고 600ms 뒤 조회한다. 주소는 value 또는 textContent를 읽고 input/change/텍스트·value 속성 mutation을 감시하며 700ms 디바운스를 유지한다. 보이는 문서에서 300ms마다 두 노드 identity·값·차량번호 없음 체크를 비교해 silent value 대입도 감지한다. 초기/교체 노드와 hash 이동에서 포커스 없이 두 값을 읽는다. IME 조합 중 예약은 중단한다. 같은 정규화 값은 X/바깥 클릭/ESC 닫힘을 유지하고 기존 클릭/포커스 재열기를 보존하며, 값 변경은 두 패널 모두 다시 연다. 차량번호 없음 체크 시 숨김·예약 취소, 해제 시 재표시한다. 주소의 기존 5글자 최소 길이는 유지한다.
+- 요청 억제: 값이 같으면 비교 루틴은 렌더·요청·디바운스 재설정을 하지 않는다. content 데이터 TTL 60초, loading guard, worker 양 모드의 60초 캐시(최대 50개)·같은 query/page/account의 flight 공유, 세대 검증, cloud 429 Retry-After 차단은 유지한다. 4글자로 검색 범위가 넓어지는 서버 비용 자체를 없애는 변경은 아니다.
+- 6글자 제한의 문서 근거: 2026-09-30 변경 이력에 “6글자 차량 부분 검색”을 새 UI 계약으로 기록했고 map 정본 README §2 및 EXTENSION_HANDOFF §3이 6자 미만 요청 금지를 명시했다. **왜 하필 6자인지(개인정보/부하/남발 등) 명시한 근거는 찾지 못했다.** 2026-05-06 이력에는 중복 요청 억제 및 서버 부분 검색 전체 스캔 비용이 별도로 기록되어 있지만 6자 결정의 직접 사유로 단정하지 않는다.
+- selfhost(읽기만 확인): PC `web/routers/api_route.py:116–121` → `services/report_query_service.py:242–255`의 `차량번호.contains(vehicle_number)` 부분 포함 검색이며 별도 6자 제한이 없다. **PC 서버 변경 불필요.** 확장 공통 `buildRequest()`의 6자 검증을 4~64자로 내려 worker 캐시 키 생성·selfhost client 검증·SEARCH/NUMBERS까지 통과하게 했다. 상한·제어문자·원문 길이·주소 검증은 유지한다.
+- cloud(읽기만 확인): map `supabase/migrations/202610020100_my_reports.sql:217–223`의 `private.my_reports_matches()`는 정규화 차량 문자열에 `strpos(..., p_query)>0`인 문자 그대로 부분 포함 검색이다. **정확 일치 문제는 없지만 4~5자 지원에는 서버 변경이 필요하다.** 정본 `contracts/my-reports/types.ts:20`의 `vehicle_min:6`을 4로 변경하면 이를 사용하는 `server/myReports/handler.ts:97–99`의 Edge 검증이 따라 바뀐다. DB `private.my_reports_check_query()`(같은 SQL 파일 `:227–233`)의 `between 6 and 64`도 새 마이그레이션으로 4~64로 변경해야 한다. Edge와 DB 양쪽 적용이 필요하며 한쪽만 바꾸면 계속 오류다.
+- cloud 후속 계약 영향: search와 numbers의 차량 길이 허용 범위를 확장하는 변경이고 DTO/커서/본인 범위·인증은 바꿀 필요 없다. 정본 README §2·HANDOFF, `tests/integration/my-reports-sql.test.ts:200–208`의 5자 거부 시험 및 3/4 경계·부분 번호·소유자 격리·numbers 시험을 갱신하고 MANIFEST 재생성 후 공식 sync 스크립트로 확장 계약 사본을 동기화해야 한다. 이번에는 다른 저장소·계약 사본을 수정하지 않았다. 확장은 4~5자도 POST하고 구 cloud가 `400 QUERY_LENGTH`를 반환하면 고정된 지원 제한 안내를 표시한다. 실제 성공 응답이 0건일 때만 기존 “이 차량으로 내 신고가 없습니다.”를 표시한다.
+- 변경 파일: `content.js`, `src/myReportsClient.js`, `src/background.js`, `shared-ui.js`, `CLAUDE.md`, `README.md`, 이 이력, `tests/content-auto-open.test.mjs`(신규), `tests/backend-worker.test.mjs`, `tests/my-reports-client.test.mjs`, `tests/selfhost-client.test.mjs`, `tests/extension-browser.test.mjs`.
+- 검증: 신규 content 순수 시험 **8/8**, worker 순수/mock 시험 **26/26** 통과(신규 4글자 cloud 오류/성공·flight/cache, selfhost 검증 경로 포함). `npm run test:contracts` 2개 파일 통과, `npm run build` 통과(cloud 공개 설정 없는 로컬 빌드), `git diff --check` 통과. 순수 시험은 3/4 정규화 경계·0건·차량번호 없음 체크/해제·X 뒤 같은 값 유지/변경 재표시·주소 text/value/input/change/silent 대입·hash/노드 교체·IME·늦은 응답 폐기를 확인한다.
+- 전체 `npm test`는 **14개 파일 중 10개 통과, 4개 실패**로 전체 통과가 아니다. 브라우저 3개 파일(`extension-browser`, `fine-rate-browser`, `review-regressions`)은 Chrome `setsockopt: Operation not permitted`/SIGTRAP으로 **샌드박스 미실행**. `release-build`는 자식 프로세스 `spawnSync ... EPERM`으로 검증 불가(별도 직접 빌드는 통과). Opus의 샌드박스 밖 재검증이 남는다. 실행 로그는 `artifacts/auto-open/`의 `npm-test.log`, `content-test.log`, `worker-test.log`, `browser-launch.log`, `release-test.log`에 보존한다. 버전 변경·커밋·push·배포 없음. 운영 cloud/PC·실제 안전신문고 검증은 수행하지 않았다.
+
 ## 2026-10-13 — 1.2.3: 주소별 담당자 과태료처분율 표시
 
 ### 2026-10-13 — 주소별 담당자 과태료처분율 (sol/ext-fine-rate, 버전 변경 없음)

@@ -37,9 +37,13 @@ test('selfhost: version handshake before every data/control request, exact heade
     const begin=calls.length;await client(config,operation,message);assert.equal(calls[begin].url,config.serverUrl+'/api/v1/server/version');assert.equal(calls.length,begin+2);
   }
   const before=calls.length;
-  // Validate before probing too: 6-character minimum applies at the trust boundary.
-  await assert.rejects(client(config,'search',{kind:'vehicle',query:'12가3'}),/INVALID_QUERY/);
+  // Validate before probing too: 4-character minimum applies at the trust boundary.
+  await assert.rejects(client(config,'search',{kind:'vehicle',query:'590'}),/INVALID_QUERY/);
   assert.equal(calls.length,before);
+  for(const operation of ['search','numbers']) {
+    await client(config,operation,{kind:'vehicle',query:' 5 902 '});
+    assert.equal(calls.at(-1).url,config.serverUrl+'/api/v1/vehicle/5902');
+  }
 });
 test('selfhost: X-SR-Taxonomy: 5 is sent on every request; an old server that ignores the header still works',async()=>{
   // 5분류(observation-v5, 2026-10-11): 헤더를 모르는 구버전 서버는 그냥 무시하고 기존 응답(3분류 포함 가능)을 돌려준다.

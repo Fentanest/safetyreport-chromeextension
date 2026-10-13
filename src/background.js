@@ -309,6 +309,9 @@ async function reports(mode, message) {
     }
     if (generation !== epoch) throw new Error('STALE_SESSION');
     if (!response.ok) {
+      if (response.status === 400 && payload?.error?.code === 'QUERY_LENGTH' && body.kind === 'vehicle' && [...body.query].length < 6) {
+        throw new Error('CLOUD_SHORT_VEHICLE_UNSUPPORTED');
+      }
       const failure = classifyError(response.status, payload);
       if (failure.clear) clearCache(false);
       else if (failure.restart) cache.clear();
@@ -326,7 +329,7 @@ async function reports(mode, message) {
   return request;
 }
 
-const ERROR_CODES = new Set(['NOT_CONFIGURED','AUTH_REQUIRED','ACCESS_DENIED','RATE_LIMITED','UNAVAILABLE','REQUEST_FAILED',
+const ERROR_CODES = new Set(['NOT_CONFIGURED','CLOUD_SHORT_VEHICLE_UNSUPPORTED','AUTH_REQUIRED','ACCESS_DENIED','RATE_LIMITED','UNAVAILABLE','REQUEST_FAILED',
   'DATASET_CHANGED','NUMBERS_LIMIT_EXCEEDED','INVALID_QUERY','STALE_SESSION','FORBIDDEN','UNKNOWN_MESSAGE','INVALID_MODE','MODE_UNSUPPORTED','MODE_REQUIRED',
   'INVALID_SERVER_URL','INVALID_API_KEY','INVALID_POLL_INTERVAL','SERVER_NOT_CONFIGURED','SERVER_PERMISSION_REQUIRED','SERVER_AUTH_REQUIRED',
   'SERVER_ACCESS_DENIED','SERVER_CONFLICT','SERVER_OFFLINE','SERVER_UPGRADE_REQUIRED','COMPAT_INFO_MISSING','CLIENT_UPGRADE_REQUIRED','CLIENT_PROTOCOL_UNSUPPORTED',
