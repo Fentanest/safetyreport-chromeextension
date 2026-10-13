@@ -11,7 +11,7 @@ function cursorOf(value) {
   return value;
 }
 
-/** Message from popup/content → the exact my-reports body. Page sizes are fixed here, not by the page script. */
+/** Message → my-reports body (vehicle minimum is the extension's forward-compatible 4). Fixed page sizes. */
 export function buildRequest(mode, msg) {
   const cursor = cursorOf(msg.cursor);
   if (mode === 'summary') return { route: 'summary', body: { cursor, page_size: PAGE.summary } };
@@ -19,7 +19,12 @@ export function buildRequest(mode, msg) {
   if (kind !== 'vehicle' && kind !== 'address') throw new Error('INVALID_QUERY');
   if (typeof msg.query !== 'string' || msg.query.length > LIMITS.query_raw_chars) throw new Error('INVALID_QUERY');
   const query = kind === 'vehicle' ? normalizeVehicle(msg.query) : normalizeAddress(msg.query);
-  if (!validQuery(kind, query)) throw new Error('INVALID_QUERY');
+  // Extension policy accepts partial plates from four code points. Keep the canonical
+  // contract copy intact: older cloud deployments still reject 4–5 via QUERY_LENGTH.
+  const valid = kind === 'vehicle'
+    ? [...query].length >= 4 && [...query].length <= LIMITS.vehicle_max && !/[\u0000-\u001f\u007f-\u009f]/u.test(query)
+    : validQuery(kind, query);
+  if (!valid) throw new Error('INVALID_QUERY');
   if (mode === 'numbers') return { route: 'numbers', body: { kind, query, cursor, page_size: PAGE.numbers } };
   if (mode !== 'search') throw new Error('INVALID_QUERY');
   const part = msg.part === 'managers' ? 'managers' : 'reports';

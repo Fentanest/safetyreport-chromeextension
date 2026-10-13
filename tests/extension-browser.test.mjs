@@ -38,31 +38,30 @@ async function setup(page) {
   },{base:`${url('')}/`,data:FIXTURES});
 }
 
-test('vehicle search waits for six characters and survives 20 DOM replacements',async()=>{
+test('vehicle search opens automatically at four characters and survives 20 DOM replacements',async()=>{
   const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
   try{
     const page=await browser.newPage({viewport:{width:800,height:600}});
     await setup(page);await page.goto(url('tests/fixture.html'));
     await page.addScriptTag({url:url('shared-ui.js')});await page.addScriptTag({url:url('content.js')});
     const input=page.locator('#VHRNO');
-    await input.fill('12가345');await page.waitForTimeout(700);
+    await input.fill('590');await page.waitForTimeout(700);
     assert.equal(await page.evaluate(()=>window.__calls.filter(x=>x.type==='SEARCH').length),0);
-    await input.fill('12가3456');await input.click();
+    await input.fill('5902');
     await page.locator('#sr-vehicle-panel-host .sr-record-key').first().waitFor();
     for(let i=0;i<20;i++){
       await page.evaluate(()=>{const old=document.getElementById('VHRNO');const fresh=old.cloneNode();fresh.value='12가3456';old.replaceWith(fresh);});
       await page.waitForTimeout(40);
-      await page.locator('#VHRNO').click();
       assert.equal(await page.locator('#sr-vehicle-panel-host').evaluate(el=>el.hidden),false);
     }
-    await page.locator('#VHRNO').fill('12가3');
+    await page.locator('#VHRNO').fill('590');
     assert.equal(await page.locator('#sr-vehicle-panel-host').evaluate(el=>el.hidden),true);
     const calls=await page.evaluate(()=>window.__calls.filter(x=>x.type==='SEARCH'));
-    assert.ok(calls.length>=1);assert.ok(calls.every(x=>[...x.query].length>=6));
+    assert.ok(calls.length>=1);assert.ok(calls.every(x=>[...x.query].length>=4));
     await page.evaluate(()=>{window.__searchDelay=250;});
     await page.locator('#VHRNO').fill('12가3456');
     await page.waitForTimeout(650);
-    await page.locator('#VHRNO').fill('12가3');
+    await page.locator('#VHRNO').fill('590');
     await page.waitForTimeout(300);
     assert.equal(await page.locator('#sr-vehicle-panel-host').evaluate(el=>el.hidden),true);
     await page.locator('#VHRNO').fill('12가3456');
@@ -73,6 +72,28 @@ test('vehicle search waits for six characters and survives 20 DOM replacements',
     await page.locator('#VHRNO').click();
     assert.equal(await page.locator('#sr-vehicle-panel-host').evaluate(el=>el.hidden),false);
     await page.close();
+  }finally{await browser.close();}
+});
+
+test('address input picker silently changes value after close and both panels reopen on changed values',async()=>{
+  const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage();await setup(page);await page.goto(url('tests/fixture.html'));
+    await page.evaluate(()=>document.getElementById('add1').replaceWith(Object.assign(document.createElement('input'),{id:'add1'})));
+    await page.addScriptTag({url:url('shared-ui.js')});await page.addScriptTag({url:url('content.js')});
+    await page.locator('#add1').fill('서울 종로구 예시로 1');
+    await page.locator('#sr-address-panel-host .sr-record-key').first().waitFor();
+    await page.locator('#sr-address-panel-host [data-action="close"]').click();
+    await page.waitForTimeout(900);assert.equal(await page.locator('#sr-address-panel-host').isVisible(),false);
+    await page.locator('#add1').evaluate(el=>{el.value='서울 종로구 예시로 2';});
+    await page.locator('#sr-address-panel-host .sr-record-key').first().waitFor();
+    await page.locator('#VHRNO').fill('5902');
+    await page.locator('#sr-vehicle-panel-host .sr-record-key').first().waitFor();
+    await page.locator('#sr-vehicle-panel-host [data-action="close"]').click();
+    await page.locator('#VHRNO').evaluate(el=>{el.value='5903';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    await page.locator('#sr-vehicle-panel-host .sr-record-key').first().waitFor();
+    assert.equal(await page.locator('#sr-address-panel-host').isVisible(),true);
+    assert.deepEqual(await page.evaluate(()=>window.__calls.filter(c=>c.type==='SEARCH').map(c=>c.query)),['서울 종로구 예시로 1','서울 종로구 예시로 2','5902','5903']);
   }finally{await browser.close();}
 });
 

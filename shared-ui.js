@@ -148,6 +148,7 @@ globalThis.SRUI = (() => {
     AUTH_REQUIRED:'확장 아이콘에서 카카오 로그인 후 조회해 주세요.',
     ACCESS_DENIED:'이 계정의 공유 동의 또는 접근 상태를 확인해 주세요.',
     NOT_CONFIGURED:'배포용 클라우드 공개 설정이 필요합니다.',
+    CLOUD_SHORT_VEHICLE_UNSUPPORTED:'현재 클라우드 서버는 차량번호 6글자부터 조회할 수 있습니다. 4글자 조회 지원이 필요합니다.',
     RATE_LIMITED:'요청이 많습니다. 잠시 후 다시 시도해 주세요.',
     UNAVAILABLE:'서버가 잠시 응답하지 않습니다. 잠시 후 다시 시도해 주세요.',
     STALE_SESSION:'모드·서버·계정이 바뀌었습니다. 다시 조회해 주세요.',

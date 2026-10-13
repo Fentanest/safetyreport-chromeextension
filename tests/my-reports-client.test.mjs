@@ -31,7 +31,10 @@ test('requests: normalised query in the body, fixed page sizes, cursor passed th
     { route: 'numbers', body: { kind: 'vehicle', query: '12가3456', cursor: 'a.b', page_size: 500 } });
   assert.deepEqual(buildRequest('summary', {}), { route: 'summary', body: { cursor: null, page_size: 20 } });
   assert.equal(PAGE.numbers, 500);
-  for (const bad of [{ kind: 'vehicle', query: '가3456' }, { kind: 'vehicle', query: '가'.repeat(65) }, { kind: 'plate', query: '12가3456' },
+  for (const query of ['5902', '가3456', ' 5 9 0 2 ']) {
+    for (const mode of ['search', 'numbers']) assert.equal(buildRequest(mode, { kind: 'vehicle', query }).body.query, query.replace(/\s/g, ''));
+  }
+  for (const bad of [{ kind: 'vehicle', query: '590' }, { kind: 'vehicle', query: '5902\u0000' }, { kind: 'vehicle', query: '가'.repeat(65) }, { kind: 'plate', query: '12가3456' },
     { kind: 'address', query: '종로구' }, { kind: 'vehicle', query: '12가3456', cursor: 'no dot' }, { kind: 'vehicle', query: '12가3456', cursor: 5 }]) {
     assert.throws(() => buildRequest('search', bad), /INVALID_QUERY/, JSON.stringify(bad));
   }
