@@ -524,3 +524,8 @@ ZIP artifact 를 받는다. push·릴리스·VERSION 변경 없음 — 워크플
 - `content.js`
   - 안전신문고 신고 페이지 `#VHRNO` 입력 감지 → 이전 신고 내역 플로팅 패널 표시
 - `main` / `dev` 브랜치 생성, 초기 커밋
+
+
+## 2026-10-14 — 이슈 대응 로컬 수정
+
+- 최상위 CLAUDE.md 규칙에 AI 내부 번호의 GitHub 자동참조 방지 지침 추가.
