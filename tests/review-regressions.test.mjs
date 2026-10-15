@@ -61,19 +61,20 @@ test('panels: same vehicle reuses fresh data, then fetches updated data after ex
   await page.waitForFunction(() => document.getElementById('sr-vehicle-panel-host').shadowRoot.querySelector('.sr-plain-count').textContent === '99건');
   assert.equal(await page.evaluate(() => window.__calls.length), 2);
 }));
-test('panels: hash navigation re-reads unchanged nodes; dismissed address can reopen and expire', async () => withPage(async page => {
+test('panels: hash navigation preserves unchanged address results; dismissed address can reopen and expire', async () => withPage(async page => {
   await content(page); await address(page);
   await page.evaluate(() => { window.__addressNode = document.getElementById('add1'); location.hash = 'next-report'; });
-  await page.waitForFunction(() => window.__calls.length === 2);
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => window.__calls.length), 1);
   await page.locator('#sr-address-panel-host .sr-record-key').first().waitFor();
   assert.equal(await page.evaluate(() => window.__addressNode === document.getElementById('add1')), true);
   await page.locator('#sr-address-panel-host [data-action="close"]').click(); await page.locator('#add1').click();
   assert.equal(await page.locator('#sr-address-panel-host').isVisible(), true);
-  assert.equal(await page.evaluate(() => window.__calls.length), 2);
+  assert.equal(await page.evaluate(() => window.__calls.length), 1);
   await page.locator('#sr-address-panel-host [data-action="close"]').click();
   await page.evaluate(() => { window.__clock += 120000; window.__data.first.summary.total = 99; }); await page.locator('#add1').click();
   await page.waitForFunction(() => document.getElementById('sr-address-panel-host').shadowRoot.querySelector('.sr-plain-count').textContent === '99건');
-  assert.equal(await page.evaluate(() => window.__calls.length), 3);
+  assert.equal(await page.evaluate(() => window.__calls.length), 2);
 }));
 async function options(page, backendMode = 'selfhost') {
   await page.addInitScript(({ backendMode }) => {

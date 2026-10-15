@@ -125,15 +125,15 @@ test('content: address text mutation, input/change events and silent picker valu
   assert.deepEqual(app.calls.map(c => c.query), ['서울 종로구 예시로 1', '서울 종로구 예시로 12', '부산 중구 예시로 1', '부산 중구 예시로 2', '부산 중구 예시로 3']);
 });
 
-test('content: SPA replacement and hash navigation reread both prefilled nodes without focus', async () => {
+test('content: hash/rebinding preserve address dismissal while new selections reopen', async () => {
   const app = content({ vehicle: '5902', address: '서울 종로구 예시로 1' }); await app.tick(1000);
   app.close('vehicle'); app.close('address'); app.window.emit('hashchange'); await app.tick(1000);
-  assert.equal(app.visible('vehicle'), true); assert.equal(app.visible('address'), true);
+  assert.equal(app.visible('vehicle'), true); assert.equal(app.visible('address'), false);
   const old = app.input;
   app.replace('VHRNO', '5903'); app.replace('add1', '부산 중구 예시로 1', false); await app.tick(1000);
-  assert.equal(app.visible('vehicle'), true); assert.equal(app.visible('address'), true);
-  assert.equal(app.calls.length, 6);
-  old.value = '9999'; old.emit('input'); await app.tick(1000); assert.equal(app.calls.length, 6);
+  assert.equal(app.visible('vehicle'), true); assert.equal(app.visible('address'), false);
+  assert.equal(app.calls.length, 4);
+  old.value = '9999'; old.emit('input'); await app.tick(1000); assert.equal(app.calls.length, 4);
 });
 
 test('content: IME composition waits for completion, silent value changes and visibility restoration are detected', async () => {

@@ -86,6 +86,11 @@ jobs:
           SR_SUPABASE_URL: ${{ vars.LOCAL_SUPABASE_URL }}
           SR_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LOCAL_SUPABASE_PUBLISHABLE_KEY }}
 
+      - name: Verify loaded extension and address panel persistence
+        run: npm run test:backend-browser
+        env:
+          SR_CHROMIUM_PATH: ${{ env.CHROME_PATH }}
+
       - name: Package extension
         run: npm run package
 

@@ -6,6 +6,7 @@ import { mkdtemp, cp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { createHash } from 'node:crypto';
 const executable=process.env.SR_CHROMIUM_PATH || chromium.executablePath();
 const dir=await mkdtemp(join(tmpdir(),'sr-backend-browser-'));
 const logs=[];let running=false,done=false,doneRead,serverVersion='3.0.0.0-dev',protocols=[3],failure=0,slowVersion=false;
@@ -70,6 +71,12 @@ const shadow=async(page,hostId,expression)=>{
 try{
   let launched=await launch();context=launched.context;const id=launched.id;
   const options=await context.newPage();await options.goto(`chrome-extension://${id}/options.html`);
+  const loadedVersion=await options.evaluate(()=>chrome.runtime.getManifest().version);
+  const loadedContent=await options.evaluate(()=>fetch(chrome.runtime.getURL('content.js')).then(r=>r.text()));
+  assert.equal(loadedVersion,(await readFile('VERSION','utf8')).trim());
+  assert.equal(loadedContent,await readFile('content.js','utf8'));
+  assert.equal(loadedContent,await readFile('build/content.js','utf8'));
+  const contentSha256=createHash('sha256').update(loadedContent).digest('hex');
   await options.locator('#backendMode').waitFor();await options.waitForFunction(()=>document.getElementById('modeStatus').textContent.includes('모드를 선택'));
   assert.equal(await options.locator('#cloudSettings').isVisible(),false);assert.equal(await options.locator('#selfhostSettings').isVisible(),false);assert.equal(logs.length,0);
   await options.locator('#backendMode').selectOption('selfhost');await options.locator('#serverUrl').fill(origin);await options.locator('#apiKey').fill('browser-mock-key');
@@ -101,7 +108,7 @@ try{
   await context.route(/^https?:\/\/(?:www\.)?safetyreport\.go\.kr\//,route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><html lang="ko"><body style="margin:30px"><label>차량번호 <input id="VHRNO"></label><p>주소 <span id="add1"></span></p><button style="position:fixed;right:20px;bottom:20px" id="native">원래 버튼</button><script>window.events=[];document.addEventListener("click",e=>events.push(e.target.id));document.addEventListener("input",e=>events.push("input:"+e.target.id));</script></body></html>'}));
   await context.grantPermissions(['clipboard-read'],{origin:'https://www.safetyreport.go.kr'});
   const page=await context.newPage();await page.goto('https://www.safetyreport.go.kr/#report');await page.bringToFront();
-  await page.locator('#VHRNO').fill('12가3');await page.waitForTimeout(700);
+  await page.locator('#VHRNO').fill('12가');await page.waitForTimeout(700);
   assert.equal(logs.filter(x=>x.path.includes('/vehicle/')).length,0);
   await page.locator('#VHRNO').fill('12가3456');await page.locator('#VHRNO').click();await page.locator('#sr-vehicle-panel-host').waitFor({state:'visible'});await page.waitForTimeout(900);
   assert.ok((await shadow(page,'sr-vehicle-panel-host','this.textContent')).includes('처리중'));assert.ok(!(await shadow(page,'sr-vehicle-panel-host','this.textContent')).includes('EXCLUDED_PRIVATE_BODY'));
@@ -144,11 +151,49 @@ try{
   const bareFont=await shadow(bareHostPage,'sr-vehicle-panel-host',"getComputedStyle(this.querySelector('.sr-record-agency')).fontSize");
   assert.equal(bareFont,'14px','bare-host Shadow DOM must load extension styles too');
   await bareHostPage.screenshot({path:join(artifacts,'vehicle-bare-host.png')});await bareHostPage.close();
+  // The user's sanitized report DOM, injected once by the REAL manifest/content script.
+  const fixtureHtml=(await readFile('tests/fixtures/address-panel.html','utf8')).replace(/<link[^>]*>/g,'');
+  await context.route('https://www.safetyreport.go.kr/address-persistence-fixture',route=>route.fulfill({contentType:'text/html',body:fixtureHtml}));
+  const persistent=await context.newPage();await persistent.setViewportSize({width:1100,height:850});
+  await persistent.goto('https://www.safetyreport.go.kr/address-persistence-fixture');
+  await persistent.evaluate(()=>{window.dragEvents=[];for(const type of ['pointerdown','pointermove','pointerup'])document.querySelector('#map').addEventListener(type,e=>window.dragEvents.push([type,e.defaultPrevented]));});
+  await persistent.locator('#add1').evaluate(el=>{el.textContent='서울특별시 종로구 예시로 1';});await persistent.waitForTimeout(1000);
+  const addressVisible=async(label)=>{
+    const info=await shadow(persistent,'sr-address-panel-host',`(()=>{
+      const body=this.querySelector('.sr-panel-content'),head=this.querySelector('.sr-panel-header'),r=this.host.getBoundingClientRect(),b=body.getBoundingClientRect(),h=head.getBoundingClientRect();
+      return {hidden:this.host.hidden,closed:this.host.shadowRoot===null,body:body.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),height:b.height,
+        collapsed:this.querySelector('.sr-panel').classList.contains('sr-panel-collapsed'),inside:r.left>=0&&r.top>=0&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1,
+        uncovered:[b,h].every(rect=>document.elementFromPoint(rect.x+20,rect.y+20)===this.host),count:document.querySelectorAll('#sr-address-panel-host').length};})()`);
+    assert.ok(!info.hidden&&info.closed&&info.body&&info.height>20&&!info.collapsed&&info.inside&&info.uncovered&&info.count===1,`${label}: ${JSON.stringify(info)}`);
+  };
+  await addressVisible('real extension initial');
+  const mapBox=await persistent.locator('#map').boundingBox();await persistent.mouse.move(mapBox.x+30,mapBox.y+40);await persistent.mouse.down();await addressVisible('real down');
+  for(let step=1;step<=4;step++){await persistent.mouse.move(mapBox.x+30+step*35,mapBox.y+40+step*10,{steps:3});await addressVisible('real move');}
+  await persistent.mouse.up();await addressVisible('real up');
+  assert.ok((await persistent.evaluate(()=>window.dragEvents)).every(([,prevented])=>!prevented));
+  for(const selector of ['#VHRNO','label[for="VHRNO"]','#vehicle-cell','#chkNoVhrNo','label[for="chkNoVhrNo"]','label[for="chkNoVhrNo"] span','#C_A_TITLE','#C_A_CONTENTS','#blank']){
+    await persistent.locator(selector).click(selector==='#vehicle-cell'?{position:{x:390,y:10}}:{});await addressVisible(selector);
+  }
+  await persistent.locator('#chkNoVhrNo').uncheck();await persistent.locator('#VHRNO').fill('12가3456');await persistent.waitForTimeout(800);await addressVisible('vehicle response');
+  await options.bringToFront();await persistent.bringToFront();await addressVisible('tab return');
+  for(const size of [{width:600,height:700},{width:390,height:600},{width:1100,height:850}]){await persistent.setViewportSize(size);await persistent.waitForTimeout(80);await addressVisible('narrow');}
+  for(const zoom of [1.25,1.5,2,1]){
+    await persistent.bringToFront();
+    await options.evaluate(async zoom=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.tabs.setZoom(tab.id,zoom);},zoom);
+    await persistent.waitForTimeout(120);await addressVisible(`browser zoom ${zoom}`);
+  }
+  await persistent.keyboard.press('Escape');await addressVisible('escape');
+  await persistent.evaluate(()=>{const a=document.querySelector('#add1');a.replaceWith(a.cloneNode(true));});await persistent.waitForTimeout(350);await addressVisible('replacement');
+  await persistent.evaluate(()=>document.querySelector('#sr-address-panel-host').remove());await persistent.waitForTimeout(100);await addressVisible('restored host');
+  await persistent.screenshot({path:join(artifacts,'address-persistence.png')});
   const twin=await context.newPage();await twin.goto(`chrome-extension://${id}/options.html`);
   await twin.waitForFunction(()=>document.getElementById('backendMode').value==='selfhost');
   await options.locator('#backendMode').selectOption('cloud');await options.waitForFunction(()=>document.getElementById('cloudSettings').hidden===false);
   await twin.waitForFunction(()=>document.getElementById('backendMode').value==='cloud');assert.equal(await twin.locator('#selfhostSettings').isVisible(),false);
-  assert.equal(await page.locator('#sr-address-panel-host').isVisible(),false);
+  assert.equal(await page.locator('#sr-address-panel-host').isVisible(),true);
+  await persistent.waitForTimeout(250);await addressVisible('cloud account switch');
+  assert.equal(await shadow(persistent,'sr-address-panel-host',"this.querySelectorAll('.sr-record').length"),0);
+  assert.ok((await shadow(persistent,'sr-address-panel-host','this.textContent')).includes('로그인'));
   await popup.reload();await popup.waitForFunction(()=>document.getElementById('accountState').textContent.includes('클라우드'));
   assert.equal(await popup.locator('#crawlStart').count(),0);assert.equal(await options.locator('#selfhostSettings').isVisible(),false);
   const before=logs.length;await page.locator('#VHRNO').click();await page.waitForTimeout(850);assert.equal(logs.length,before,'cloud must make zero selfhost requests');
@@ -176,6 +221,11 @@ try{
   assert.ok((await shadow(page,'sr-vehicle-panel-host','this.textContent')).includes('일부수용'));
   assert.equal((await status(options)).data.backendMode,'selfhost');
   assert.equal(await workerEval(options,id,'globalThis.__srTestWorkerMarker'),undefined,'worker must actually restart');
+  await persistent.waitForTimeout(500);await addressVisible('actual worker restart');
+  const closeBox=await shadow(persistent,'sr-address-panel-host',`this.querySelector('[data-action="close"]').getBoundingClientRect().toJSON()`);
+  await persistent.mouse.click(closeBox.x+closeBox.width/2,closeBox.y+closeBox.height/2);
+  await persistent.evaluate(()=>{const a=document.querySelector('#add1');a.replaceWith(a.cloneNode(true));window.dispatchEvent(new Event('focus'));location.hash='other';});await persistent.waitForTimeout(800);
+  assert.equal(await persistent.locator('#sr-address-panel-host').isVisible(),false);
   assert.equal(await options.evaluate(()=>chrome.action.getBadgeText({})),'1','same server badge survives an actual worker restart');
   await context.close();context=null;
   launched=await launch();context=launched.context;let restarted=await context.newPage();await restarted.goto(`chrome-extension://${launched.id}/options.html`);
@@ -208,6 +258,6 @@ try{
   await restarted.locator('#backendMode').selectOption('selfhost');await restarted.waitForFunction(()=>!document.getElementById('selfhostSettings').hidden);
   // Offline result is distinct from authentication/version failures.
   await new Promise(r=>server.close(r));await restarted.locator('#btnTest').click();await restarted.waitForFunction(()=>document.getElementById('testResult').textContent.includes('연결할 수 없습니다'));
-  const report={browser:await context.browser()?.version(),newInstall:true,selfhost:true,cloudSelfhostRequests:0,focusTabSwitch:true,syntheticBlurFocus:true,altTabKeyChord:true,osAltTab:"headless: not tested",coldStartMigrations:true,closedShadow:true,copy:true,nodeReplacement:true,nativeEvents:true,workerStop:true,browserRestart:true,oldServer:true,unsupportedProtocol:true,authFailure:true,offline:true,unchangedNodeNavigation:true,optionsTabSync:true,betweenAlarmCompletion:true,badgeWorkerAndBrowserRestart:true,popupCrawlControlsFirst:true,httpAndHttpsContentScripts:true,httpShadowStyles:true,serverRequests:logs.length,kakao:'not tested',productionServer:'not tested',hostPermissionDialog:'test manifest pregranted exact mock origin'};
+  const report={loadedVersion,loadedPath:extension,buildSource:resolve('build'),contentSha256,extensionId:id,addressPersistence:true,addressBrowserZoom:[1,1.25,1.5,2],addressRealWorkerRestart:true,addressClosedAfterX:true,productionSite:'not tested; routed sanitized fixture',browser:await context.browser()?.version(),newInstall:true,selfhost:true,cloudSelfhostRequests:0,focusTabSwitch:true,syntheticBlurFocus:true,altTabKeyChord:true,osAltTab:"headless: not tested",coldStartMigrations:true,closedShadow:true,copy:true,nodeReplacement:true,nativeEvents:true,workerStop:true,browserRestart:true,oldServer:true,unsupportedProtocol:true,authFailure:true,offline:true,unchangedNodeNavigation:true,optionsTabSync:true,betweenAlarmCompletion:true,badgeWorkerAndBrowserRestart:true,popupCrawlControlsFirst:true,httpAndHttpsContentScripts:true,httpShadowStyles:true,serverRequests:logs.length,kakao:'not tested',productionServer:'not tested',hostPermissionDialog:'test manifest pregranted exact mock origin'};
   await writeFile(join(artifacts,'result.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
 }finally{if(context)await context.close();server.close();await rm(dir,{recursive:true,force:true});}

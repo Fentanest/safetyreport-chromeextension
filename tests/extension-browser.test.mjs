@@ -292,7 +292,7 @@ test('address and vehicle panels show at the same time, sized to content and not
   }finally{await browser.close();}
 });
 
-test('address panel shrinks/collapses instead of overlapping when the vehicle panel needs the same space, and both stay togglable',async()=>{
+test('address body stays expanded when vehicle needs the same space; only manual collapse hides it',async()=>{
   const browser=await chromium.launch({executablePath:CHROME,headless:true,args:['--no-sandbox']});
   try{
     const page=await browser.newPage({viewport:{width:600,height:700}});
@@ -302,7 +302,7 @@ test('address panel shrinks/collapses instead of overlapping when the vehicle pa
     await page.locator('#VHRNO').evaluate(el=>{el.style.left='260px';el.style.top='200px';});
     await page.locator('#add1').evaluate(el=>{el.textContent='서울특별시 종로구 예시로 1';});
     await page.locator('#sr-address-panel-host .sr-record-key').first().waitFor();
-    await page.locator('#VHRNO').fill('12가3456');await page.locator('#VHRNO').click();
+    await page.locator('#VHRNO').fill('12가3456');
     await page.locator('#sr-vehicle-panel-host .sr-record-key').first().waitFor();
     await page.waitForTimeout(80); // let the rAF-scheduled position() pass settle
     const info=await page.evaluate(()=>{
@@ -317,12 +317,14 @@ test('address panel shrinks/collapses instead of overlapping when the vehicle pa
     });
     assert.equal(info.addressHidden,false);assert.equal(info.vehicleHidden,false);
     assert.equal(info.overlap,false,`still overlapping: ${JSON.stringify(info)}`);
-    assert.ok(info.collapsedClass,`expected the address panel to fold instead of overlapping: ${JSON.stringify(info)}`);
-    assert.ok(info.a.height<140,`folded address panel should be header-only: ${info.a.height}`);
-    // the user can still expand the folded address panel back open
+    assert.equal(info.collapsedClass,false,JSON.stringify(info));
+    assert.ok(info.a.height>140,`address must retain its body: ${info.a.height}`);
+    // Only the user's manual toggle may hide the body.
     await page.locator('#sr-address-panel-host').evaluate(host=>host.shadowRoot.querySelector('[data-action="toggle-collapse"]').click());
     const expanded=await page.evaluate(()=>document.getElementById('sr-address-panel-host').shadowRoot.querySelector('.sr-panel').classList.contains('sr-panel-collapsed'));
-    assert.equal(expanded,false,'toggle-collapse should re-expand the address panel');
+    assert.equal(expanded,true,'manual toggle should collapse the address panel');
+    await page.locator('#sr-address-panel-host').evaluate(host=>host.shadowRoot.querySelector('[data-action="toggle-collapse"]').click());
+    assert.equal(await page.locator('#sr-address-panel-host .sr-panel-content').isVisible(),true);
     await page.close();
   }finally{await browser.close();}
 });

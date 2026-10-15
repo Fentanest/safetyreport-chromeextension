@@ -1,0 +1,26 @@
+<!doctype html><html lang="ko"><meta charset="utf-8">
+<!-- Sanitized relevant subtrees of the HTML supplied on 2026-10-15.
+     Identity fields, saved extension host/closed shadow, remote scripts and tiles omitted.
+     Map descendants represent SDK layers, not a working Kakao SDK. Only test sizing differs. -->
+<style>
+body{margin:0;min-height:1800px;font:16px sans-serif}#frmSafeReport{width:550px;padding:16px}
+table{width:100%;border-collapse:collapse}td{padding:10px}th{width:85px}#map{height:321px;position:relative;overflow:hidden;background:#dde7ee;touch-action:none}
+#map .map-layer{position:absolute;inset:0}#map .map-tile{position:absolute;inset:0;user-select:none}#map .map-controls{position:absolute;right:5px;top:5px}
+#VHRNO{width:180px;height:30px}#blank{width:200px;height:70px}#add1{display:inline-block;min-height:24px}label{display:inline-block;padding:5px}.ota_check_td{margin-top:5px}
+</style><link rel="stylesheet" href="../../content.css"><body class="PC main">
+<div id="wrapper"><div id="container"><section id="content"><section id="contents"><form id="frmSafeReport">
+<div class="tab"><article class="tabDoc"><div class="innerBox"><div class="table_bbs singo tb_sty03"><table><tbody>
+<tr><th scope="row"><span>신고 발생 지역</span></th><td colspan="3">
+<article class="article">지도에서 정확한 위치를 클릭해 주세요.</article>
+<article class="article"><button type="button" id="btnFindLoc">도로명검색</button><button type="button" id="btnJibunSearch">지번검색</button>
+<span class="font_accent1" id="add1" title=""></span><span id="add1Btn" class="icon-favorites"></span>
+<input type="hidden" id="RN_ADRES" value="테스트 도로명"><input type="hidden" id="C_A_ADD2" value="테스트 지번">
+<input type="hidden" id="C_ADD1" value="신고주소가 아닌 테스트 주소"><input type="hidden" id="C_ADD2" value="사용하지 않는 상세주소"></article>
+<article class="daumMap article"><div id="map"><div class="map-layer"><div><div class="map-tile"></div><svg><defs></defs></svg></div></div>
+<div class="map-controls"><button type="button" title="확대">+</button><button type="button" title="축소">−</button></div></div></article>
+<div id="box" style="display:none"><div id="staticMap"></div></div></td></tr>
+<tr><th scope="row"><label for="C_A_TITLE">제목</label></th><td colspan="3"><input type="text" id="C_A_TITLE" class="inputWmax" maxlength="150"></td></tr>
+<tr><th scope="row"><label for="C_A_CONTENTS">신고 내용</label></th><td colspan="3"><textarea id="C_A_CONTENTS" class="inputWmax" maxlength="1600"></textarea></td></tr>
+<tr><th scope="row"><label for="VHRNO">차량 번호</label></th><td colspan="3" id="vehicle-cell"><input type="text" id="VHRNO" name="VHRNO" title="차량번호" class="inputWmd" maxlength="10" placeholder="차량 번호 입력">
+<div class="ota_check_td"><input type="hidden" id="noVhrNo" name="noVhrNo"><input type="checkbox" id="chkNoVhrNo"> <label for="chkNoVhrNo"><span class="txt_lineH">차량 번호 없음</span></label></div></td></tr>
+</tbody></table></div></div></article></div><div id="blank"></div></form></section></section></div></div>

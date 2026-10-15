@@ -10,7 +10,8 @@
   const states = Object.fromEntries(['vehicle','address'].map(kind => [kind, {
     kind, node: null, controller: null, observer: null, query: '', generation: 0,
     timer: null, open: false, dismissed: false, data: null, copying: false, cancelCopy: false, managerOpen: false,
-    collapsed: null, autoFold: false, // address-only: collapsed null=auto(follow autoFold), true/false=user override
+    collapsed: false, // address-only, changed exclusively by the manual fold button
+    clearTimer: null, loading: false, status: '', // independent of the current source DOM node
   }]));
   const panels = {};
   const DATA_TTL = 60_000;
@@ -37,6 +38,7 @@
     const root = host.attachShadow({ mode: 'closed' });
     for (const filename of ['ui-tokens.css','ui-components.css']) {
       const link = document.createElement('link');
+      link.addEventListener('load', queuePosition);
       link.rel = 'stylesheet'; link.href = chrome.runtime.getURL(filename); root.append(link);
     }
     // Content-script-only density/sizing overrides (closed ShadowRoot): popup.html/options.html load the same
@@ -93,8 +95,7 @@
       if (action === 'cancel-copy') states[kind].cancelCopy = true;
       if (action === 'toggle-collapse') {
         const st = states[kind];
-        const current = st.collapsed === null ? st.autoFold : st.collapsed;
-        st.collapsed = !current;
+        st.collapsed = !st.collapsed;
         render(kind); queuePosition();
       }
     });
@@ -103,73 +104,47 @@
     }, true);
     return panels[kind] = { host, root, shell };
   }
-  // Both panels can be visible together. Each panel sizes to its own content (CSS max-height + the panel's own
-  // internal scroll handles overflow, see panel()'s injected stylesheet) instead of a fixed box. The address
-  // panel stays anchored top-right; the vehicle panel tries to avoid overlapping it by shifting left / shrinking,
-  // and only as a last resort folds the address panel down to its header (still user-toggleable; see "collapsed").
-  function rectOverlap(a,b) {
-    return a.left < b.right-0.5 && a.right > b.left+0.5 && a.top < b.bottom-0.5 && a.bottom > b.top+0.5;
-  }
+  // Layout owns geometry only. It never changes open/collapsed or the address body DOM.
+  // At narrow widths split the available height and scroll each panel internally.
   function position() {
     const vp = window.visualViewport;
     const vw = vp?.width || innerWidth, vh = vp?.height || innerHeight;
     const ox = vp?.offsetLeft || 0, oy = vp?.offsetTop || 0;
-    const as = states.address;
-    // Folding also narrows the address panel (not just its height): a vertical-only shrink never helps a purely
-    // horizontal conflict, and the address panel's own width is comfortably spared since its header still wraps.
-    const layoutAddress = fold => {
-      const p = panels.address;
-      const header = p.shell.querySelector('.sr-panel-header');
-      const width = Math.min(fold ? FOLDED_ADDRESS_WIDTH : ADDRESS_WIDTH, vw-EDGE*2);
-      const top = oy + Math.min(70, Math.max(EDGE, vh-EDGE-40));
-      const maxHeight = fold ? (header?.offsetHeight || 52) : Math.max(120, oy+vh-EDGE-top);
-      Object.assign(p.host.style,{width:`${width}px`,left:`${ox+vw-width-EDGE}px`,top:`${top}px`});
+    const availableHeight = Math.max(0, vh - EDGE*2);
+    const a = panels.address, v = panels.vehicle;
+    const both = a && states.address.open && v && states.vehicle.open;
+    const aw = Math.max(0, Math.min(states.address.collapsed ? FOLDED_ADDRESS_WIDTH : ADDRESS_WIDTH, vw-EDGE*2));
+    const sideRoom = vw - EDGE*2 - aw - GAP;
+    const stacked = both && sideRoom < MIN_VEHICLE_WIDTH;
+    const addressTop = oy + (stacked || vh < 700 ? EDGE : Math.min(70, vh-EDGE));
+    const place = (p, width, left, top, maxHeight) => {
+      Object.assign(p.host.style,{width:`${width}px`,left:`${left}px`,top:`${top}px`});
       p.host.style.removeProperty('height');
-      p.shell.style.maxHeight = `${maxHeight}px`;
-      p.shell.classList.toggle('sr-panel-collapsed', fold);
-      return as.open ? p.host.getBoundingClientRect() : null;
+      p.shell.style.maxHeight = `${Math.max(0,maxHeight)}px`;
     };
-    let addressRect = null;
-    if (panels.address) addressRect = layoutAddress(as.collapsed === null ? false : as.collapsed);
-
-    const s = states.vehicle;
-    if (panels.vehicle && s.open && s.node?.isConnected) {
-      const rect = s.node.getBoundingClientRect();
+    if (a) {
+      const height = stacked ? Math.floor((availableHeight-GAP)*0.55) : oy+vh-EDGE-addressTop;
+      place(a, aw, ox+vw-aw-EDGE, addressTop, height);
+    }
+    if (v && states.vehicle.open && states.vehicle.node?.isConnected) {
+      const rect = states.vehicle.node.getBoundingClientRect();
       let width = Math.min(VEHICLE_WIDTH, vw-EDGE*2);
       let left = Math.min(Math.max(rect.left,ox+EDGE), ox+vw-width-EDGE);
-      const belowRoom = oy+vh-EDGE - (rect.bottom+6), aboveRoom = (rect.top-6) - (oy+EDGE);
       let top, maxHeight;
-      if (belowRoom >= Math.min(aboveRoom,200)) { maxHeight = Math.max(160,belowRoom); top = rect.bottom+6; }
-      else { maxHeight = Math.max(160,aboveRoom); top = Math.max(oy+EDGE, rect.top-6-maxHeight); }
-
-      // Try to dodge the address panel by shifting/shrinking left of it; returns whether it still overlaps.
-      const avoidAddress = floor => {
-        if (!addressRect || !rectOverlap({left,right:left+width,top,bottom:top+maxHeight}, addressRect)) return false;
-        const avail = addressRect.left - GAP - (ox+EDGE);
-        if (avail < floor) return true;
-        width = Math.min(width, avail); left = ox+EDGE;
-        return rectOverlap({left,right:left+width,top,bottom:top+maxHeight}, addressRect);
-      };
-      let fold = false;
-      if (avoidAddress(MIN_VEHICLE_WIDTH)) {
-        if (as.collapsed === null) {
-          fold = true;
-          addressRect = layoutAddress(true);
-          width = Math.min(VEHICLE_WIDTH, vw-EDGE*2);
-          left = Math.min(Math.max(rect.left,ox+EDGE), ox+vw-width-EDGE);
-          avoidAddress(MIN_VEHICLE_WIDTH); // best effort against the now-narrower, shorter address panel
-        } else {
-          // The user explicitly forced the address panel open (or closed) — folding it is not our call to make.
-          // Still avoid a full overlap if at all possible, even below the usual comfortable floor.
-          avoidAddress(180);
-        }
+      if (stacked) {
+        // Use actual content height for short/zero-result/manual-folded address panels.
+        top = a.host.getBoundingClientRect().bottom + GAP;
+        maxHeight = oy+vh-EDGE-top;
+        left = ox+vw-width-EDGE;
+      } else {
+        if (both) { width = Math.min(width,sideRoom); left = ox+EDGE; }
+        const below = Math.max(0,oy+vh-EDGE-(rect.bottom+6));
+        const above = Math.max(0,rect.top-6-(oy+EDGE));
+        maxHeight = Math.min(availableHeight,Math.max(below,above,160));
+        top = below >= Math.min(above,200) ? rect.bottom+6 : rect.top-6-maxHeight;
+        top = Math.max(oy+EDGE,Math.min(top,oy+vh-EDGE-maxHeight));
       }
-      as.autoFold = fold;
-      Object.assign(panels.vehicle.host.style,{width:`${width}px`,left:`${left}px`,top:`${top}px`});
-      panels.vehicle.host.style.removeProperty('height');
-      panels.vehicle.shell.style.maxHeight = `${maxHeight}px`;
-    } else {
-      as.autoFold = false;
+      place(v,width,left,top,maxHeight);
     }
   }
   function queuePosition() {
@@ -186,20 +161,24 @@
     const s = states[kind]; s.open = false;
     if (dismissed) {
       clearTimeout(s.timer); s.dismissed = true; s.generation++; s.cancelCopy = true; s.loading = s.reportsLoading = s.managersLoading = false;
-      if (kind === 'address') { s.collapsed = null; s.autoFold = false; }
+      clearTimeout(s.clearTimer); s.clearTimer = null;
     }
     refreshVisibility();
   }
   function invalidate(kind) {
     const s = states[kind]; clearTimeout(s.timer); s.generation++; s.data = null; s.cancelCopy = true; s.managerOpen = false;
-    s.loadedAt = 0; s.loading = s.reportsLoading = s.managersLoading = false; s.message = '';
+    s.loadedAt = 0; s.loading = s.reportsLoading = s.managersLoading = false; s.message = ''; s.status = '';
   }
   function show(kind) {
-    states[kind].open = true; states[kind].dismissed = false; panel(kind); refreshVisibility();
+    states[kind].open = true; states[kind].dismissed = false;
+    const p = panel(kind);
+    if (!p.host.isConnected && document.body) document.body.append(p.host);
+    refreshVisibility();
   }
   // s.data = { summary, reports: ReportPage (items accumulated), managers: ManagerPage (items accumulated) } — my-reports-v1
   function render(kind,message='') {
     const s = states[kind], p = panel(kind), data = s.data;
+    if (message) s.status = message;
     const heading = kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고';
     const scope = data?.backend === 'selfhost' ? '내 서버의 신고 · 처리중 포함' : backendMode === 'selfhost' ? '셀프호스팅 · 내 서버' : backendMode === 'cloud' ? '클라우드 · 내가 공유한 완료 신고' : '현재 선택한 백엔드로 조회';
     const total = Number(data?.summary?.total || 0), missing = Number(data?.summary?.report_number_missing || 0);
@@ -208,14 +187,16 @@
     // by popup.js/options.js too) are untouched.
     const zeroState = !!data && total === 0;
     const collapsible = kind === 'address';
-    const collapsed = collapsible && (s.collapsed === null ? s.autoFold : s.collapsed);
+    const collapsed = collapsible && s.collapsed;
     const collapseButton = collapsible
       ? `<button class="sr-icon-button" data-action="toggle-collapse" aria-expanded="${!collapsed}" aria-label="${collapsed ? '패널 펼치기' : '패널 접기'}">${SRUI.icon(collapsed ? 'chevronDown' : 'chevronUp')}</button>`
       : '';
-    const body = !data ? `<p class="sr-section sr-note" role="status">${SRUI.esc(message||'조회 중…')}</p>`
+    const body = !data ? `<p class="sr-section sr-note" role="status">${SRUI.esc(s.status || (kind === 'address' && !s.query ? '주소를 선택해 주세요.' : '조회 중…'))}</p>`
       : zeroState ? `<p class="sr-section sr-note" role="status">${SRUI.esc(kind === 'vehicle' ? '이 차량으로 내 신고가 없습니다.' : '이 주소로 내 신고가 없습니다.')}</p>`
       : `${s.message?`<p class="sr-section sr-note" role="status">${SRUI.esc(s.message)}</p>`:''}${SRUI.summary(data.summary)}${kind==='address'?SRUI.managers(data.managers,s.managerOpen):''}${SRUI.records(data.reports)}${data.reports?.next_cursor?`<button class="sr-button sr-more" data-action="more" ${s.reportsLoading?'disabled':''}>${s.reportsLoading?'불러오는 중…':'신고 더 보기'}</button>`:''}`;
     p.shell.innerHTML = `<header class="sr-panel-header"><div class="sr-header-copy"><div class="sr-header-title"><span class="sr-icon-badge">${SRUI.icon(kind === 'vehicle' ? 'car' : 'pin')}</span>${heading}<span class="sr-plain-count">${data ? `${SRUI.count(total)}건` : ''}</span></div><p class="sr-header-caption">${SRUI.queryBadge(kind, s.query)}</p></div><div class="sr-header-actions">${data && total>missing ? `<button class="sr-button" data-action="copy">${SRUI.icon('copy','sr-icon-sm')}신고번호 복사</button>` : ''}${collapseButton}<button class="sr-icon-button" data-action="close" aria-label="닫기">${SRUI.icon('close')}</button></div></header><div class="sr-panel-content">${body}</div><footer class="sr-panel-footer"><span>${s.copying?'신고번호를 모으는 중…':SRUI.esc(scope)}</span>${s.copying?'<button class="sr-text-button" data-action="cancel-copy">취소</button>':''}</footer>`;
+    p.shell.classList.toggle('sr-panel-collapsed', collapsed);
+    queuePosition();
     const managerButton = p.shell.querySelector('[data-action="more-managers"]');
     if (managerButton) { managerButton.disabled = !!s.managersLoading; if (s.managersLoading) managerButton.textContent = '불러오는 중…'; }
   }
@@ -223,11 +204,11 @@
   async function search(kind,retried=false) {
     const s=states[kind], query=s.query, generation=s.generation;
     if (!s.open || s.dismissed || !query || s.loading || s.composing) return;
-    s.loading = true;
+    s.loading = true; s.status = '';
     render(kind);
     try {
       const result=await send({type:'SEARCH',kind,query,fresh:retried});
-      if (generation!==s.generation || query!==s.query || !s.open || s.dismissed || !s.node?.isConnected) return;
+      if (generation!==s.generation || query!==s.query || !s.open || s.dismissed || (kind === 'vehicle' && !s.node?.isConnected)) return;
       backendMode=result.backend || 'cloud';
       s.data={backend:backendMode,summary:result.summary,reports:result.reports,managers:result.managers}; s.loadedAt=Date.now(); render(kind);
     } catch(error) {
@@ -298,15 +279,30 @@
     render('vehicle');
     clearTimeout(s.timer);s.timer=setTimeout(()=>search('vehicle'),600);
   }
-  function addressChanged(reopen=false) {
+  const readAddress = node => normalizeAddress(node && ('value' in node ? node.value : node.textContent));
+  function addressChanged(reopen=false, allowSelectionOpen=true) {
     const s=states.address;
     if(!s.node?.isConnected || s.composing)return;
-    // #add1 may be a text container or an input populated by the address picker.
-    const query=normalizeAddress('value' in s.node ? s.node.value : s.node.textContent);
+    // The report address is #add1 only; C_ADD1/C_ADD2 can contain the reporter's address.
+    const query=readAddress(s.node);
+    if([...query].length<5){
+      // A missing node is a binding gap, not a cleared selection. A short value must settle
+      // on a connected node before retiring the last confirmed query/results.
+      if(s.query && !s.clearTimer) s.clearTimer=setTimeout(()=>{
+        s.clearTimer=null;
+        if(!s.node?.isConnected || [...readAddress(s.node)].length>=5)return;
+        invalidate('address');s.query='';
+        if(s.open)render('address');
+      },900);
+      return;
+    }
+    clearTimeout(s.clearTimer);s.clearTimer=null;
     if(query===s.query && !reopen)return;
     if(query!==s.query || (s.data && Date.now()-s.loadedAt>=DATA_TTL))invalidate('address');
-    s.query=query;s.dismissed=false;
-    if([...query].length<5){hide('address');return;}
+    s.query=query;
+    // Rebinding and focus restoration cannot undo X. An actual new selection or
+    // an explicit address click can. Preserve the user's manual fold choice throughout.
+    if(s.dismissed && !reopen && !allowSelectionOpen)return;
     show('address');render('address');if(s.data)return;
     clearTimeout(s.timer);s.timer=setTimeout(()=>search('address'),700);
   }
@@ -326,18 +322,22 @@
     }
     const address=document.getElementById('add1'), a=states.address;
     if(address!==a.node){
-      a.controller?.abort();a.observer?.disconnect();invalidate('address');hide('address');a.node=address;a.query='';a.composing=false;
+      a.controller?.abort();a.observer?.disconnect();
+      clearTimeout(a.clearTimer);a.clearTimer=null;a.node=address;a.composing=false;
       if(address){
         a.controller=new AbortController();const signal=a.controller.signal;
         address.addEventListener('click',()=>addressChanged(true),{signal});
-        address.addEventListener('focus',()=>addressChanged(true),{signal});
         address.addEventListener('input',()=>addressChanged(),{signal});
         address.addEventListener('change',()=>addressChanged(),{signal});
         address.addEventListener('compositionstart',()=>{a.composing=true;clearTimeout(a.timer);},{signal});
-        address.addEventListener('compositionend',()=>{a.composing=false;addressChanged(true);},{signal});
+        address.addEventListener('compositionend',()=>{a.composing=false;addressChanged();},{signal});
         a.observer=new MutationObserver(()=>addressChanged());a.observer.observe(address,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['value']});
       }
+      addressChanged(false,!a.dismissed);
     }
+    // Restore the same host/root only while the user still has this panel open.
+    const ap=panels.address;
+    if(a.open && ap && !ap.host.isConnected && document.body){document.body.append(ap.host);queuePosition();}
     // Also read prefilled/reused nodes, without relying on focus after SPA navigation.
     vehicleChanged();addressChanged();
   }
@@ -349,16 +349,15 @@
   setInterval(()=>{if(!document.hidden)rebind();},300);
   document.addEventListener('pointerdown',event=>{
     const path=event.composedPath();
-    // A click on either tracked input or either panel is never "outside" — it's the user actively using one of
-    // the two features, which must not blow away the other's panel. Only a click away from all of them dismisses.
+    // Outside-click dismissal belongs to the vehicle panel only, regardless of map DOM.
     const insideTracked=['vehicle','address'].some(kind => {
       const s=states[kind];
       return (s.node && path.includes(s.node)) || (panels[kind] && path.includes(panels[kind].host));
     });
     if(insideTracked)return;
-    for(const kind of ['vehicle','address']){ if(states[kind].open)hide(kind,true); }
+    if(states.vehicle.open)hide('vehicle',true);
   },true);
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'){if(states.vehicle.open)hide('vehicle',true);else if(states.address.open)hide('address',true);}});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'){if(states.vehicle.open)hide('vehicle',true);}});
   document.addEventListener('scroll',queuePosition,true);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){queueScan();queuePosition();}});
   window.addEventListener('focus',queuePosition);
@@ -366,15 +365,15 @@
   window.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('resize',queuePosition);
   window.visualViewport?.addEventListener('scroll',queuePosition);
-  window.addEventListener('hashchange',()=>{for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);states[kind].query='';states[kind].composing=false;}queueScan();});
+  window.addEventListener('hashchange',()=>{invalidate('vehicle');hide('vehicle');states.vehicle.query='';states.vehicle.composing=false;queueScan();queuePosition();});
   chrome.runtime.onMessage.addListener(message=>{
-    if(message?.type==='AUTH_CHANGED'||message?.type==='DATA_INVALIDATED'){backendMode=null;for(const kind of ['vehicle','address']){invalidate(kind);hide(kind);}}
-    if(message?.type==='WORKER_RESTARTED'){
-      backendMode=null;
-      for(const kind of ['vehicle','address']){
-        invalidate(kind);
-        if(states[kind].open&&!states[kind].dismissed){render(kind,'현재 연결을 다시 확인하는 중…');states[kind].timer=setTimeout(()=>search(kind),0);}
-      }
+    if(!['AUTH_CHANGED','DATA_INVALIDATED','WORKER_RESTARTED'].includes(message?.type))return;
+    backendMode=null;
+    for(const kind of ['vehicle','address']){
+      invalidate(kind); // Erase prior-account data immediately, including hidden/collapsed DOM.
+      const s=states[kind];
+      if(panels[kind])render(kind,message.type==='AUTH_CHANGED' ? '로그인 및 계정 상태를 확인하는 중…' : '현재 연결을 다시 확인하는 중…');
+      if(s.open && !s.dismissed && s.query)s.timer=setTimeout(()=>search(kind),0);
     }
   });
 })();

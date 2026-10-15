@@ -78,6 +78,10 @@ test('release build follows VERSION, includes cloud config, and replaces ZIP wit
     assert.ok(!entries.includes('obsolete.txt'));
     assert.ok(!entries.some(name => name.startsWith('build/') || name.startsWith('node_modules/')));
     assert.equal(JSON.parse(execFileSync('unzip', ['-p', zip, 'manifest.json'], { encoding: 'utf8' })).version, '9.8.7.6');
+    const content = await readFile('content.js','utf8');
+    assert.equal(await readFile(join(dir,'build/content.js'),'utf8'),content);
+    assert.equal(execFileSync('unzip',['-p',zip,'content.js'],{encoding:'utf8'}),content);
+    assert.doesNotMatch(content,/window\.state|window\.transitions|window\.root/);
     await writeFile(join(dir, 'VERSION'), '9.8.8\n');
     assert.throws(() => run('package'), /Built version differs from VERSION/);
     await writeFile(join(dir, 'VERSION'), '9.8.7.6\n');
