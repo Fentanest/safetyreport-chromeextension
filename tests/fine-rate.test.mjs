@@ -87,6 +87,30 @@ test('selfhost counts only disposition has_fine and preserves all server rows, p
   assert.ok(!html.includes('90,000'));
 });
 
+test('selfhost groups one agency arriving under several department codes by the server agency_key', () => {
+  const key = 'inst:ag-c1321068', current = '서울특별시경찰청 서울강서경찰서';
+  const rows = [
+    ['경찰청 서울특별시경찰청 서울강서경찰서 경비교통과', '수용'],
+    ['경찰청 서울특별시경찰청 서울강서경찰서 교통과', '불수용'],
+    ['경찰청 서울특별시경찰청 서울강서경찰서', '불수용'],
+  ].map(([처리기관, 처리상태], index) => ({ id: String(9200000000 + index), 신고번호: `K-${index}`, 처리기관, 처리상태,
+    담당자: '담당자 갑', 범칙금_과태료: '', agency_name_current: current, agency_key: key }));
+  // An older server without the additive fields keeps the previous per-original-name grouping.
+  rows.push({ 처리기관: '기관 B', 담당자: '담당자 갑', 처리상태: '수용', 범칙금_과태료: '' });
+  const dto = searchDto({ status: 'success', count: rows.length, data: rows }, 'http://localhost:6819');
+  assert.deepEqual(dto.managers.items.map(p => [p.agency_name_current ?? null, p.agency_name_original, p.total, p.accepted]),
+    [[current, '경찰청 서울특별시경찰청 서울강서경찰서 경비교통과', 3, 1], [null, '기관 B', 1, 1]]);
+  assert.equal(dto.reports.items[1].agency_name_current, current);
+  assert.equal(dto.reports.items[1].agency_name_original, '경찰청 서울특별시경찰청 서울강서경찰서 교통과');
+  const html = ui.managers(dto.managers, true);
+  assert.ok(html.includes(`<div class="sr-officer-agency">${current}</div>`));
+  assert.ok(!html.includes('경비교통과'));
+  // Report cards show the current name and keep the source name as a note.
+  const cards = ui.records(dto.reports);
+  assert.ok(cards.includes(current));
+  assert.ok(cards.includes('당시 경찰청 서울특별시경찰청 서울강서경찰서 교통과'));
+});
+
 test('both manager paths round original counts to one decimal instead of using pre-rounded accept_rate', () => {
   const p = { ...manager(), total: 6, status: { ...manager().status, accepted: 1 }, disposition: { fine: 1 }, accept_rate: 99 };
   ratio(ui.managers({ items: [p] }), '16.7% (1/6건)', '16.7% (1/6건)');

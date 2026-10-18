@@ -3,6 +3,7 @@ import { buildRequest } from './myReportsClient.js';
 import { PROTOCOL, verifyCompatibility, compatibilityError } from './selfhostCompat.js';
 
 const text = value => typeof value === 'string' ? value : null;
+const filled = value => typeof value === 'string' && value.trim() ? value : null;
 const officialUrl = id => /^[0-9A-Za-z_-]{1,40}$/.test(String(id ?? ''))
   ? `https://www.safetyreport.go.kr/#mypage/mysafereport/${encodeURIComponent(id)}` : null;
 // Project raw server records to an allowlist before crossing into a content script.
@@ -16,6 +17,8 @@ export function projectRecord(row, origin, recent = false) {
     status: ({ 수용: 'accepted', 일부수용: 'partial', 불수용: 'rejected' })[status] || 'unknown',
     status_label: status, selfhost_disposition: disposition,
     address: text(row.위반장소), agency_name_original: text(row.처리기관), manager_name: text(row.담당자),
+    // Additive PC fields (2026-10-18: registry current name + stats key); absent on older servers.
+    agency_name_current: filled(row.agency_name_current), agency_key: filled(row.agency_key),
     violation_law: text(row.위반법규), rating: Number.isInteger(Number(row.별점)) && Number(row.별점) >= 1 && Number(row.별점) <= 5 ? Number(row.별점) : null };
 }
 export function searchDto(payload, origin) {
@@ -27,8 +30,10 @@ export function searchDto(payload, origin) {
     statuses[status] = (statuses[status] || 0) + 1;
     dispositions[disposition] = (dispositions[disposition] || 0) + 1;
     if (item.manager_name) {
-      const key = JSON.stringify([item.agency_name_original, item.manager_name]);
-      const person = managers.get(key) || { manager_name: item.manager_name, agency_name_original: item.agency_name_original, total: 0, accepted: 0, fine_count: 0 };
+      // One agency arrives under several department codes (e.g. 경비교통과/교통과); group by the server's registry key when present.
+      const key = JSON.stringify(item.agency_key ? ['key', item.agency_key, item.manager_name] : ['name', item.agency_name_original, item.manager_name]);
+      const person = managers.get(key) || { manager_name: item.manager_name, agency_name_original: item.agency_name_original,
+        agency_name_current: item.agency_name_current, total: 0, accepted: 0, fine_count: 0 };
       person.total++;
       if (item.status === 'accepted') person.accepted++;
       // PC services/report_policy.py has_fine: only the disposition field, regardless of amount/status.
