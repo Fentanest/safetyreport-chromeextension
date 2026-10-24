@@ -62,7 +62,7 @@
 ## 빌드 일치
 
 - 버전: `VERSION`, 소스 manifest, build manifest, ZIP manifest, 브라우저 `chrome.runtime.getManifest()` 모두 **1.2.5**.
-- 실제 사이트 테스트 로드 경로: `/home/better0101/projects/safetyreport-chromeextension/build` (manifest 수정 없음).
+- 실제 사이트 테스트 로드 경로: `~/projects/safetyreport-chromeextension/build` (manifest 수정 없음).
 - mock backend 테스트는 build 사본의 manifest에 localhost mock origin/notifications만 허용한 `/tmp/sr-backend-browser-*/extension`을 로드한다. 테스트 종료 시 임시 프로필/사본은 정리한다.
 - content.js SHA-256: `f1bef4be1ec5942b0533b31d46ff7e533e938b5da22b3df6abcf0ceed889dde8`. 소스/build/실제 로드한 resource 바이트 비교 통과.
 - 로컬 Chromium: 140.0.7339.186. 계약 fixture 브라우저 테스트는 CHROME_PATH 또는 시스템 Google Chrome.
