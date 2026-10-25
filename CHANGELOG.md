@@ -41,7 +41,7 @@
 - 착수 확인(코드/로컬 git): 미커밋 변경 없음, `HEAD = dev = main = 6687012`, 브랜치 `sol/ext-fine-rate`. 확장 `CLAUDE.md`, 공통 요구사항의 착수 조건·3절·확장 완료 기준, PC 판정/검색 경로, cloud 계약 정의를 읽었다. 원격 최신 커밋을 fetch한 결과로 주장하지 않는다.
 - 실행 검증: 변경 전 `npm test` 87/87건, 최종 변경 후 PTY에서 `npm test` 96/96건(기존 87 + 신규 9, 실패·skip 0). 신규 순수 시험 5건은 cloud/selfhost 분모 유지, 0/미제공, 금액 건수와 처분 건수 차이, 금액 없음, 일부 수용 제외, 처리중 포함, 동명이인, 반올림을 확인했다. 신규 Playwright 시험 4건은 두 모드의 364px 라이트/다크, 긴 이름·큰 건수, 신고/담당자 더 보기(cloud), 캐시 재열기·TTL·주소 변경·DATA_INVALIDATED와 요청 수를 확인했다. 최종 출력은 `artifacts/fine-rate/npm-test-pty-final.log`에 보존했다.
 - `npm run test:contracts` 종료 코드 0(해당 별도 실행의 runner는 2개 파일 단위로 보고; 전체 `npm test`에서는 계약 관련 개별 시험 12건 확인), `npm run build` 통과(로컬 공개 cloud 설정 없는 빌드). `git diff --check` 통과. 일부 비PTY/직접 실행에서는 실행 환경의 Chrome `setsockopt: Operation not permitted`/SIGTRAP 및 `spawnSync EPERM`으로 실패했으며, 별도 로그를 `artifacts/fine-rate/sandbox-*.log`와 `browser-direct.log`에 보존했다. 최종 통과 결과와 구분한다.
-- 캡처: 실제 `content.js` 주소 패널 + mock runtime/합성 DTO로 `artifacts/fine-rate/{cloud,selfhost}-364-{light,dark}.png` 4장 생성·시각 확인. 절대 경로는 `/home/better0101/projects/worktree/ext-fine/artifacts/fine-rate/`다. 요청된 `/home/better0101/projects/worktree/ext-fine-shots/`는 세션 쓰기 허용 범위 밖이라 이 작업 폴더 안에 저장했다. 산출물은 기존 `artifacts/` ignore 규칙을 따른다.
+- 캡처: 실제 `content.js` 주소 패널 + mock runtime/합성 DTO로 `artifacts/fine-rate/{cloud,selfhost}-364-{light,dark}.png` 4장 생성·시각 확인. 절대 경로는 `~/projects/worktree/ext-fine/artifacts/fine-rate/`다. 요청된 `~/projects/worktree/ext-fine-shots/`는 세션 쓰기 허용 범위 밖이라 이 작업 폴더 안에 저장했다. 산출물은 기존 `artifacts/` ignore 규칙을 따른다.
 - 미실행: 설치한 확장의 `test:backend-browser`/`test:action-popup`, 실제 안전신문고·카카오 로그인·운영 cloud/PC 실데이터, 운영 반영. 코드 검토·mock 브라우저 검증을 실서버 실행 검증으로 보고하지 않는다. 버전 변경·커밋·push·배포 없음.
 
 ## 2026-10-13 — 1.2.2: 주소·차량 신고 내역 창 개선
@@ -83,10 +83,10 @@
   숨김을 단정한 것은 없어 수정은 불필요했다(모두 그대로 통과).
 - 검증: `npm test` 87건(기존 84 + 신규 3) 통과, `npm run test:contracts` 12건 통과, `npm run build` 통과.
   `SR_CHROMIUM_PATH=/usr/bin/google-chrome npm run test:action-popup`은 이 변경과 무관하게 수정 전 원본 레포
-  (`/home/better0101/projects/safetyreport-chromeextension`)에서도 동일하게 `serviceworker` 타임아웃으로 실패해
+  (`~/projects/safetyreport-chromeextension`)에서도 동일하게 `serviceworker` 타임아웃으로 실패해
   로컬 환경 제약으로 보고 실행하지 않았다(미실행). 빌드한 확장을 mock 페이지(`tests/fixture.html`)에 띄운
   Playwright(Google Chrome, `/usr/bin/google-chrome`) 스크린샷을 1366/1920px × 라이트/다크 × 데이터 있음/0건
-  조합 8장과 600px 접힘 시나리오 2장, 총 10장을 `/home/better0101/projects/worktree/ext-panels-shots/`에 저장했다.
+  조합 8장과 600px 접힘 시나리오 2장, 총 10장을 `~/projects/worktree/ext-panels-shots/`에 저장했다.
   커밋·push·VERSION/manifest 버전 변경 없음.
 
 ## 2026-10-13 — 1.2.1: 팝업·연결 상태·화면 개선
@@ -281,7 +281,7 @@ ZIP artifact 를 받는다. push·릴리스·VERSION 변경 없음 — 워크플
 - `npm run build`: 제품 1.2.0, 기본 selfhost 가능 / cloud 공개 설정 없는 빌드 통과.
 
 별도 실제 브라우저 검증:
-- `SR_CHROMIUM_PATH=/home/better0101/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome npm run test:backend-browser`: Chromium 153.0.8010.12 unpacked 확장, 실제 service worker와 closed Shadow DOM content script, 로컬 mock 서버로 통과.
+- `SR_CHROMIUM_PATH=~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome npm run test:backend-browser`: Chromium 153.0.8010.12 unpacked 확장, 실제 service worker와 closed Shadow DOM content script, 로컬 mock 서버로 통과.
 - 옵션·팝업·차량/주소 패널, 라이트/다크, 서버 키 마스킹, 실제 번호 복사, 서버 크롤링 시작/중지, 모드 변경 뒤 서버 요청 0건, node 교체·tab 전환·blur/focus·Alt-Tab 키 조합·클릭 버튼 release 뒤 패널 유지, 원래 페이지 click/input 이벤트 전달을 검사했다.
 - 새 설치와 legacy/cloud/양쪽/명시 선택의 cold-start 마이그레이션을 각각 브라우저 프로필에 저장한 후 재시작해 확인. CDP로 worker를 실제 중단한 뒤 전역 marker 소멸 및 첫 검색 정상 유지를 확인. 서버 2.x·protocol 미지원·401·오프라인 안내를 구분했다.
 - `npm run test:action-popup`: 실제 action popup 460px, 단일 스크롤·footer/viewport 경계 통과.
