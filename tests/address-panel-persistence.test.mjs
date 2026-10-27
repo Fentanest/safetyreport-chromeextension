@@ -9,12 +9,12 @@ const sourceRoot = process.env.SR_CONTENT_ROOT || '.';
 const fixture = name => JSON.parse(readFileSync(`contracts/my-reports/fixtures/${name}.json`, 'utf8'));
 const A = '서울특별시 종로구 테스트로 1', B = '서울특별시 종로구 테스트로 2';
 
-async function setup(mode, fn) {
+async function setup(fn) {
   const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
     await page.goto(url('tests/fixtures/address-panel.html'));
-    await page.evaluate(({ base, data, empty, mode }) => {
+    await page.evaluate(({ base, data, empty }) => {
       // Test-only observation: keep actual closed mode. Nothing is added to shipping code.
       const attach = Element.prototype.attachShadow, roots = new Map();
       Element.prototype.attachShadow = function(options) { const root = attach.call(this, options); roots.set(this.id, root); return root; };
@@ -24,14 +24,13 @@ async function setup(mode, fn) {
       window.mapEvents = []; for (const type of ['pointerdown','pointermove','pointerup']) document.querySelector('#map').addEventListener(type, e => window.mapEvents.push({type, prevented:e.defaultPrevented}));
       window.respond = (message, cb) => {
         const result = structuredClone(window.reply === 'empty' ? empty : data);
-        result.backend = mode;
         if (result.reports?.items?.[0]) result.reports.items[0].vehicle_number = message.query;
         cb(window.reply === 'error' ? {error:'REQUEST_FAILED'} : window.reply === 'auth' ? {error:'AUTH_REQUIRED'} : {data:result});
       };
       window.chrome.runtime = { getURL:n=>base+n, onMessage:{addListener:f=>window.messages.push(f)}, sendMessage(m,cb){window.calls.push(m);if(window.hold)window.respond(m,r=>window.pending.push(()=>cb(r)));else window.respond(m,cb);} };
       window.chrome.storage = {sync:{get:(_,cb)=>cb({})},onChanged:{addListener(){}}};
       window.notify = type => window.messages.forEach(fn=>fn({type}));
-    }, { base:url(sourceRoot)+'/', data:fixture('search-vehicle-first-page'), empty:fixture('search-empty'), mode });
+    }, { base:url(sourceRoot)+'/', data:fixture('search-vehicle-first-page'), empty:fixture('search-empty') });
     await page.addScriptTag({url:url(`${sourceRoot}/shared-ui.js`)});
     // Capture controller snapshots in tests only, including call site and event target for diagnoses.
     let source = readFileSync(resolve(sourceRoot, 'content.js'), 'utf8');
@@ -63,14 +62,13 @@ async function drag(page, change=false) {
   const events=await page.evaluate(()=>window.mapEvents);assert.ok(events.some(e=>e.type==='pointerdown')&&events.filter(e=>e.type==='pointermove').length>=4&&events.some(e=>e.type==='pointerup'));assert.ok(events.every(e=>!e.prevented));
 }
 
-for (const mode of ['cloud','selfhost']) {
-  for(const result of ['records','empty']) test(`${mode}: map drag continuously preserves ${result}, unchanged and changed address`,()=>setup(mode,async page=>{
+  for(const result of ['records','empty']) test(`map drag continuously preserves ${result}, unchanged and changed address`,()=>setup(async page=>{
     await page.evaluate(value=>window.reply=value,result);await select(page);await settled(page);await drag(page);await drag(page,true);await settled(page);await visible(page);assert.equal(await page.evaluate(()=>window.state().query),B);
   }));
-  for(const selector of ['#VHRNO','label[for="VHRNO"]','#vehicle-cell','#chkNoVhrNo','label[for="chkNoVhrNo"]','label[for="chkNoVhrNo"] span','#C_A_TITLE','#C_A_CONTENTS','#blank']) test(`${mode}: independent outside target ${selector}`,()=>setup(mode,async page=>{
+  for(const selector of ['#VHRNO','label[for="VHRNO"]','#vehicle-cell','#chkNoVhrNo','label[for="chkNoVhrNo"]','label[for="chkNoVhrNo"] span','#C_A_TITLE','#C_A_CONTENTS','#blank']) test(`independent outside target ${selector}`,()=>setup(async page=>{
     await select(page);await settled(page);await page.locator(selector).click(selector==='#vehicle-cell'?{position:{x:390,y:10}}:{});await visible(page,selector);
   }));
-  for(const prefilled of [false,true]) test(`${mode}: narrow direct vehicle click (prefilled=${prefilled}) never auto-folds address`,()=>setup(mode,async page=>{
+  for(const prefilled of [false,true]) test(`narrow direct vehicle click (prefilled=${prefilled}) never auto-folds address`,()=>setup(async page=>{
     await page.setViewportSize({width:600,height:700});
     await page.locator('#VHRNO').evaluate(el=>Object.assign(el.style,{position:'fixed',left:'25px',top:'440px',width:'150px'}));
     if(prefilled)await page.locator('#VHRNO').fill('12가3456');
@@ -79,7 +77,7 @@ for (const mode of ['cloud','selfhost']) {
     if(!prefilled)await page.locator('#VHRNO').fill('12가3456');
     await page.waitForTimeout(750);await visible(page,'vehicle opens');
   }));
-  test(`${mode}: direct populated vehicle input, edits, completion and deletion preserve address and scroll`,()=>setup(mode,async page=>{
+  test(`direct populated vehicle input, edits, completion and deletion preserve address and scroll`,()=>setup(async page=>{
     await select(page);await settled(page);
     await page.evaluate(()=>window.root('address').querySelector('.sr-panel-content').scrollTop=50);
     const before=await page.evaluate(()=>({state:window.state(),scroll:window.root('address').querySelector('.sr-panel-content').scrollTop,html:window.root('address').querySelector('.sr-panel-content').innerHTML}));
@@ -87,7 +85,7 @@ for (const mode of ['cloud','selfhost']) {
     await page.locator('#VHRNO').fill('12가3457');await page.waitForTimeout(750);await visible(page);await page.locator('#VHRNO').fill('');await visible(page);
     assert.deepEqual(await page.evaluate(()=>({state:window.state(),scroll:window.root('address').querySelector('.sr-panel-content').scrollTop,html:window.root('address').querySelector('.sr-panel-content').innerHTML})),before);
   }));
-  test(`${mode}: replacement, temporary missing node/value and detached handlers preserve query and results`,()=>setup(mode,async page=>{
+  test(`replacement, temporary missing node/value and detached handlers preserve query and results`,()=>setup(async page=>{
     await select(page);await settled(page);const calls=await page.evaluate(()=>window.calls.length);
     await page.evaluate(()=>{window.old=document.querySelector('#add1');window.old.replaceWith(window.old.cloneNode(true));});await page.waitForTimeout(400);await visible(page,'replacement');
     assert.equal(await page.evaluate(()=>window.calls.length),calls);
@@ -98,14 +96,14 @@ for (const mode of ['cloud','selfhost']) {
     assert.equal(await page.evaluate(()=>window.calls.length),calls);await visible(page);
     await select(page,'');await page.waitForTimeout(1200);await visible(page,'confirmed clear');assert.match(await page.evaluate(()=>window.root('address').textContent),/주소를 선택/);
   }));
-  test(`${mode}: late A cannot overwrite B; zero and errors stay inside panel`,()=>setup(mode,async page=>{
+  test(`late A cannot overwrite B; zero and errors stay inside panel`,()=>setup(async page=>{
     await page.evaluate(()=>window.hold=true);await select(page);await page.waitForTimeout(750);await visible(page,'A pending');await select(page,B);await page.waitForTimeout(750);await visible(page,'B pending');
     assert.equal(await page.evaluate(()=>window.root('address').querySelectorAll('.sr-record').length),0);
     await page.evaluate(()=>window.pending.pop()());await settled(page);assert.match(await page.evaluate(()=>window.root('address').querySelector('.sr-record-key').textContent),/테스트로 2/);const html=await page.evaluate(()=>window.root('address').innerHTML);
     await page.evaluate(()=>window.pending.shift()());await page.waitForTimeout(50);assert.equal(await page.evaluate(()=>window.root('address').innerHTML),html);
     for(const reply of ['empty','error']){await page.evaluate(r=>{window.hold=false;window.reply=r;},reply);await select(page,A+reply);await settled(page);await visible(page,reply);assert.equal(await page.evaluate(()=>window.root('address').querySelectorAll('.sr-record').length),0);assert.match(await page.evaluate(()=>window.root('address').querySelector('.sr-note').textContent),reply==='empty'?/없습니다/:/연결|실패|다시/);}
   }));
-  test(`${mode}: layout, escape, focus, hash, messages and host restoration never close or fold`,()=>setup(mode,async page=>{
+  test(`layout, escape, focus, hash, messages and host restoration never close or fold`,()=>setup(async page=>{
     await select(page);await settled(page);await page.locator('#VHRNO').fill('12가3456');await page.waitForTimeout(750);
     for(const size of [{width:600,height:700},{width:390,height:600},{width:1100,height:850}]){await page.setViewportSize(size);await page.waitForTimeout(80);await visible(page,'resize');}
     await page.evaluate(()=>window.scrollTo(0,400));await page.waitForTimeout(60);await visible(page,'scroll');await page.keyboard.press('Escape');await visible(page,'escape');
@@ -114,16 +112,15 @@ for (const mode of ['cloud','selfhost']) {
     await page.evaluate(()=>document.getElementById('sr-address-panel-host').remove());await page.waitForTimeout(100);await visible(page,'host restore');
     await clickAction(page,'toggle-collapse');await page.setViewportSize({width:600,height:700});await page.waitForTimeout(80);assert.equal(await page.evaluate(()=>window.state().collapsed),true);await clickAction(page,'toggle-collapse');await page.waitForTimeout(80);await visible(page,'manual expand');
   }));
-  test(`${mode}: X persists across pending response, replacements, focus, hash, invalidation and removed host`,()=>setup(mode,async page=>{
+  test(`X persists across pending response, replacements, focus, hash, invalidation and removed host`,()=>setup(async page=>{
     await page.evaluate(()=>window.hold=true);await select(page);await page.waitForTimeout(750);await clickAction(page,'close');
     await page.evaluate(()=>{window.pending.shift()();const a=document.querySelector('#add1');a.replaceWith(a.cloneNode(true));window.dispatchEvent(new Event('focus'));location.hash='another';document.querySelector('#add1').dispatchEvent(new Event('focus'));for(const t of ['AUTH_CHANGED','DATA_INVALIDATED','WORKER_RESTARTED'])window.notify(t);});
     await page.waitForTimeout(1000);assert.equal(await page.locator('#sr-address-panel-host').isVisible(),false);
     await page.evaluate(()=>document.querySelector('#sr-address-panel-host').remove());await page.waitForTimeout(400);assert.equal(await page.locator('#sr-address-panel-host').count(),0);
     await page.evaluate(()=>window.hold=false);await page.locator('#add1').click();await settled(page);await visible(page,'explicit reopen');
   }));
-  test(`${mode}: auth change immediately erases prior account data and rejects old responses`,()=>setup(mode,async page=>{
+  test(`auth change immediately erases prior account data and rejects old responses`,()=>setup(async page=>{
     await select(page);await settled(page);await page.evaluate(()=>{window.hold=true;window.notify('DATA_INVALIDATED');});await page.waitForTimeout(50);
     await page.evaluate(()=>{window.reply='auth';window.notify('AUTH_CHANGED');});assert.equal(await page.evaluate(()=>window.root('address').querySelectorAll('.sr-record').length),0);await page.waitForTimeout(50);
     await page.evaluate(()=>{window.pending.reverse().forEach(f=>f());window.pending=[];});await page.waitForTimeout(100);await visible(page);assert.equal(await page.evaluate(()=>window.root('address').querySelectorAll('.sr-record').length),0);
   }));
-}

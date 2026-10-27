@@ -18,7 +18,7 @@ try{
     const popup=await browser.newPage({viewport:{width:460,height:570}});
     await popup.addInitScript(({base,data,theme})=>{
       window.chrome.runtime={getURL:name=>base+name,lastError:null,
-        sendMessage:(message,respond)=>respond({data:message.type==='STATUS'?{backendMode:'cloud',signedIn:true,name:'시험 사용자'}:message.type==='SUMMARY'?data.summary:data.first}),
+        sendMessage:(message,respond)=>respond({data:message.type==='STATUS'?{signedIn:true,name:'시험 사용자'}:message.type==='SUMMARY'?data.summary:data.first}),
         onMessage:{addListener(){}},openOptionsPage(){}};
       window.chrome.storage={sync:{get:(_key,respond)=>respond({theme}),onChanged:{addListener(){}}},onChanged:{addListener(){}}};
     },{base,data,theme});
@@ -26,21 +26,17 @@ try{
     await popup.locator('.sr-record-key').first().waitFor();
     await popup.locator('.sr-popup').screenshot({path:resolve(output,`action-${theme}.png`)});
     await popup.close();
-    for(const mode of ['selfhost','cloud']){
-      const options=await browser.newPage({viewport:{width:800,height:1000}});
-      await options.addInitScript(({base,theme,mode})=>{
-        window.chrome.runtime={getURL:name=>base+name,lastError:null,
-          sendMessage:(message,respond)=>respond({data:message.type==='GET_SETTINGS'
-            ? {backendMode:mode,selfhost:{serverUrl:'http://localhost:6819',apiKey:'fixture-key',notifyCrawlDone:true,pollInterval:5}}
-            : {backendMode:mode,connected:true,version:'3.0.0',signedIn:true,name:'시험 사용자'}}),
-          onMessage:{addListener(){}}};
-        window.chrome.storage={sync:{get:(_key,respond)=>respond({theme}),set:async()=>{}},onChanged:{addListener(){}}};
-      },{base,theme,mode});
-      await options.goto(url('options.html'));
-      await options.locator(mode==='selfhost'?'#selfhostSettings':'#cloudSettings').waitFor();
-      await options.screenshot({path:resolve(output,`options-${mode}-${theme}.png`),fullPage:true});
-      await options.close();
-    }
+    const options=await browser.newPage({viewport:{width:800,height:1000}});
+    await options.addInitScript(({base,theme})=>{
+      window.chrome.runtime={getURL:name=>base+name,lastError:null,
+        sendMessage:(_message,respond)=>respond({data:{connected:true,signedIn:true,name:'시험 사용자'}}),
+        onMessage:{addListener(){}}};
+      window.chrome.storage={sync:{get:(_key,respond)=>respond({theme}),set:async()=>{}},onChanged:{addListener(){}}};
+    },{base,theme});
+    await options.goto(url('options.html'));
+    await options.locator('#cloudSettings').waitFor();
+    await options.screenshot({path:resolve(output,`options-${theme}.png`),fullPage:true});
+    await options.close();
     for(const kind of ['vehicle','address']){
       const page=await browser.newPage({viewport:{width:kind==='vehicle'?800:500,height:800}});
       await page.addInitScript(({base,data,theme})=>{
