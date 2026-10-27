@@ -38,7 +38,7 @@
 
 `tests/address-panel-persistence.test.mjs` 38개: 수정 전 **6 통과 / 32 실패**, 수정 후 **38 통과**. 수정 전 content/shared/style 바이트를 `artifacts/address-baseline`에 보존해 동일한 최종 테스트를 실행했다.
 
-- 지도는 실제 브라우저 mouse down → 여러 단계 move → up. 누름/이동 각 단계/놓음에서 내부 본문 검사. 주소 유지/새 주소, 결과 있음/0건을 cloud/selfhost 각각 실행.
+- 지도는 실제 브라우저 mouse down → 여러 단계 move → up. 누름/이동 각 단계/놓음에서 내부 본문 검사. 주소 유지/새 주소, 결과 있음/0건을 실행(1.3.0부터 cloud만).
 - 차량 input 중앙(빈 값/조회 가능한 값), label, td 빈 공간, checkbox, checkbox label 및 내부 span을 분리.
 - 넓은 화면 input 직접 클릭은 수정 전에도 통과했다. 라벨·주변 영역은 pointerdown에서 open=false/hidden=true가 됐다.
 - 좁은 화면의 직접 입력/조회는 수정 전 open=true/hidden=false인 채 autoFold=true, collapsed class, 본문 display:none으로 실패했다. 입력 DOM 교체 없이도 재현되므로 자동 접힘을 별도 원인으로 확인했다.
@@ -54,7 +54,7 @@
 - `npm run test:contracts`: 12 통과.
 - `node --test tests/release-build.test.mjs`: 3 통과. 소스/build/ZIP content.js 동일성 및 배포 코드에 테스트 훅이 없음을 추가 검사.
 - `npm run test:action-popup`: 통과. action popup 변경 없음 확인.
-- `npm run test:backend-browser`: 실제 확장 manifest 주입, 실제 background dispatch, closed shadow를 CDP로 관측. mock selfhost 결과 및 cloud 로그인 안내, 실제 worker stop/restart, host 복원, X, 탭 복귀, 100/125/150/200% 브라우저 배율 통과. 이 검사를 릴리스 workflow에도 추가했다.
+- `npm run test:backend-browser`: 실제 확장 manifest 주입, 실제 background dispatch, closed shadow를 CDP로 관측. mock selfhost 결과 및 cloud 로그인 안내, 실제 worker stop/restart, host 복원, X, 탭 복귀, 100/125/150/200% 브라우저 배율 통과. 이 검사를 릴리스 workflow에도 추가했다. (1.3.0에서 셀프호스트와 함께 이 스크립트의 mock 데이터 기반 주소 패널 단계는 1.2.6 업데이트 시나리오 검증으로 대체됐다. 주소 패널 유지 시험은 `tests/address-panel-persistence.test.mjs`가 mock worker로 이어서 검사한다.)
 - `node scripts/check-address-live.mjs`: 실제 사이트의 비로그인 자동차·교통위반 폼과 Kakao SDK 대상. 실제 위치 선택·드래그 단계·확대/축소·차량/라벨/체크박스·제목/본문·차량 입력/삭제·탭 복귀·Escape·X 검증. 조회 본문은 cloud 비로그인 안내이며 실제 신고 데이터 검증은 아니다.
 
 실제 계정의 운영 cloud/selfhost 신고 데이터, OS 수준 Alt+Tab은 미검증이다. headless 탭 전환/blur/focus 검사는 OS 창 전환 검증으로 부르지 않는다. 사용자 데스크톱에 기존 설치된 웹 스토어 확장 버전은 변경/로드 확인하지 않았으며, 별도 Chromium 프로필에서 새 빌드를 명시적으로 로드했다.

@@ -64,6 +64,9 @@ test('release build follows VERSION, includes cloud config, and replaces ZIP wit
     const manifest = JSON.parse(await readFile(join(dir, 'build/manifest.json'), 'utf8'));
     assert.equal(manifest.version, '9.8.7.6');
     assert.deepEqual(manifest.host_permissions, ['https://supabase.release-fixture.example/*']);
+    // 1.3.0: no PC (selfhost) permissions — not even optional ones.
+    assert.deepEqual(manifest.permissions, ['storage', 'identity', 'clipboardWrite']);
+    for (const key of ['optional_permissions', 'optional_host_permissions']) assert.equal(manifest[key], undefined, key);
     const bundle = await readFile(join(dir, 'build/background.js'), 'utf8');
     assert.ok(bundle.includes('https://supabase.release-fixture.example'));
     assert.ok(bundle.includes('sb_publishable_release_fixture'));
@@ -77,7 +80,13 @@ test('release build follows VERSION, includes cloud config, and replaces ZIP wit
     assert.ok(entries.includes('background.js'));
     assert.ok(!entries.includes('obsolete.txt'));
     assert.ok(!entries.some(name => name.startsWith('build/') || name.startsWith('node_modules/')));
-    assert.equal(JSON.parse(execFileSync('unzip', ['-p', zip, 'manifest.json'], { encoding: 'utf8' })).version, '9.8.7.6');
+    const packaged = JSON.parse(execFileSync('unzip', ['-p', zip, 'manifest.json'], { encoding: 'utf8' }));
+    assert.equal(packaged.version, '9.8.7.6');
+    assert.deepEqual(packaged.permissions, ['storage', 'identity', 'clipboardWrite']);
+    assert.deepEqual(packaged.host_permissions, ['https://supabase.release-fixture.example/*']);
+    assert.equal(packaged.optional_permissions, undefined); assert.equal(packaged.optional_host_permissions, undefined);
+    assert.ok(!JSON.stringify(packaged).includes('alarms') && !JSON.stringify(packaged).includes('notifications'));
+    assert.ok(!bundle.includes('chrome.alarms') && !bundle.includes('chrome.notifications'), 'the bundle has no PC alarm or notification path');
     const content = await readFile('content.js','utf8');
     assert.equal(await readFile(join(dir,'build/content.js'),'utf8'),content);
     assert.equal(execFileSync('unzip',['-p',zip,'content.js'],{encoding:'utf8'}),content);

@@ -17,7 +17,6 @@ try {
   const version=await settings.evaluate(()=>chrome.runtime.getManifest().version);
   const loaded=await settings.evaluate(()=>fetch(chrome.runtime.getURL('content.js')).then(r=>r.text()));
   assert.equal(version,(await readFile('VERSION','utf8')).trim());assert.equal(loaded,await readFile('content.js','utf8'));
-  await settings.locator('#backendMode').selectOption('cloud');
   const page=await context.newPage();page.on('dialog',d=>d.dismiss());
   await page.goto('https://www.safetyreport.go.kr/#safereport/safereport3',{waitUntil:'domcontentloaded'});
   await page.locator('#map').waitFor();await page.locator('#map').scrollIntoViewIfNeeded();
@@ -55,6 +54,6 @@ try {
   await page.screenshot({path:join(artifacts,'actual-site.png')});
   const close=await inspect(`this.querySelector('[data-action="close"]').getBoundingClientRect().toJSON()`);await page.mouse.click(close.x+close.width/2,close.y+close.height/2);
   await settings.bringToFront();await page.bringToFront();await page.waitForTimeout(1000);assert.equal(await page.locator('#sr-address-panel-host').isVisible(),false);steps.push('X remains closed');
-  const report={version,extensionId:id,loadedPath:extension,contentSha256:createHash('sha256').update(loaded).digest('hex'),browser:await context.browser().version(),site:page.url(),steps,backend:'cloud, unauthenticated login guidance only',notTested:['logged-in production report results','production selfhost data','OS Alt+Tab']};
+  const report={version,extensionId:id,loadedPath:extension,contentSha256:createHash('sha256').update(loaded).digest('hex'),browser:await context.browser().version(),site:page.url(),steps,backend:'cloud, unauthenticated login guidance only',notTested:['logged-in production report results','OS Alt+Tab']};
   await writeFile(join(artifacts,'result.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
 } finally {await context.close();await rm(profile,{recursive:true,force:true});}
