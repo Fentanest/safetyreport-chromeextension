@@ -31,7 +31,11 @@ async function recordFailure(api, step, error, previous) {
 
 export async function migrateFromSelfhost(api) {
   const stored = await api.storage.local.get([MIGRATION_KEY, ERROR_KEY, 'srStatusCache']);
-  if (stored[MIGRATION_KEY] >= MIGRATION_VERSION) return false;
+  if (stored[MIGRATION_KEY] >= MIGRATION_VERSION) {
+    // A trace left behind because only its own removal failed after the version was recorded.
+    if (stored[ERROR_KEY] !== undefined) await attempt(() => api.storage.local.remove(ERROR_KEY));
+    return false;
+  }
   let step = 'start';
   try {
     if (api.alarms?.clear) await attempt(() => api.alarms.clear(ALARM));
@@ -49,10 +53,11 @@ export async function migrateFromSelfhost(api) {
     await api.storage.sync.remove(SYNC_KEYS);
     step = 'record';
     await api.storage.local.set({ [MIGRATION_KEY]: MIGRATION_VERSION });
-    await api.storage.local.remove(ERROR_KEY);
   } catch (error) {
     await recordFailure(api, step, error, stored[ERROR_KEY]);
     throw error;
   }
+  // Done: only the trace is left. Its removal failing must not read as a failed migration; the next start retries it.
+  await attempt(() => api.storage.local.remove(ERROR_KEY));
   return true;
 }

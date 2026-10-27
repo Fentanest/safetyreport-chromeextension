@@ -121,3 +121,15 @@ test('migration: repeated failures increase the attempt count in the trace', asy
   assert.equal(second.stores.local.srMigrationError.attempts, 2);
   assert.equal(second.stores.local.srMigrationError.step, 'sync');
 });
+test('migration: a trace whose own removal failed after the version was recorded is cleaned on the next start', async () => {
+  let broken = true;
+  const trace = { step: 'sync', code: 'Error', at: 1, attempts: 1 };
+  const first = await worker({ local: { selfhost: config, srMigrationError: trace }, sync: config,
+    failStorageRemove: (where, keys) => broken && where === 'local' && keys === 'srMigrationError' });
+  assert.equal(first.stores.local.srMigration, 1, 'the migration itself finished');
+  assert.deepEqual(first.stores.local.srMigrationError, trace, 'the leftover trace could not be removed yet');
+  broken = false;
+  const second = await worker({ local: first.stores.local, sync: first.stores.sync });
+  assert.equal(second.stores.local.srMigrationError, undefined);
+  assert.equal(second.stores.local.srMigration, 1);
+});
