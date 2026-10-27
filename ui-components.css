@@ -29,12 +29,7 @@
 .sr-icon-badge svg {width:17px;height:17px;}
 .sr-icon-badge--brand {width:42px;height:42px;border-radius:11px;background:var(--sr-surface-2);border:1px solid var(--sr-border);padding:3px;}
 .sr-icon-badge--brand img {width:100%;height:100%;border-radius:7px;display:block;object-fit:contain;}
-/* 모드 뱃지 · 연결 상태 점 */
-.sr-mode-pill {display:inline-flex;align-items:center;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:12px;line-height:18px;font-weight:650;vertical-align:middle;background:var(--sr-surface-3);color:var(--sr-text-muted);border:1px solid var(--sr-border);}
-/* 라이트에서는 --sr-primary 그대로 쓰면 작은 글자 기준 4.5:1을 넘기지 못해 텍스트 전용으로 더 진한 톤을 쓴다(배경·테두리는 토큰 그대로). */
-.sr-mode-pill--selfhost {background:var(--sr-primary-soft);color:#1456b8;border-color:transparent;}
-:root[data-sr-theme="dark"] .sr-mode-pill--selfhost, :host([data-sr-theme="dark"]) .sr-mode-pill--selfhost {color:var(--sr-primary);}
-.sr-mode-pill--cloud {background:var(--sr-tone-partial-bg);color:var(--sr-tone-partial-fg);border-color:var(--sr-tone-partial-border);}
+/* 연결 상태 점 */
 .sr-status-led {display:inline-block;width:7px;height:7px;border-radius:50%;flex:none;background:var(--sr-tone-unknown-base);}
 .sr-status-led--ok {background:var(--sr-tone-accept-base);}
 .sr-status-led--warn {background:var(--sr-tone-partial-base);}

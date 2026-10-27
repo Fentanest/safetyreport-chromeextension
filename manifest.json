@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
   "name": "나만의 안전신문고",
-  "version": "1.2.6",
-  "description": "개인 safetyreport 서버 또는 클라우드에서 내 신고 조회",
+  "version": "1.3.0",
+  "description": "클라우드에 공유한 내 신고를 안전신문고 화면에서 조회",
   "permissions": [
     "storage",
     "identity",
-    "clipboardWrite",
-    "alarms"
+    "clipboardWrite"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -61,12 +60,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "optional_permissions": [
-    "notifications"
-  ],
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ]
+  }
 }

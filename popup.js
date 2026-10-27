@@ -2,21 +2,15 @@
 (() => {
   const content=document.getElementById('content');
   const account=document.getElementById('accountState');
-  const modeBadge=document.getElementById('modeBadge');
   const statusDot=document.getElementById('statusDot');
   document.getElementById('refresh').innerHTML=SRUI.icon('refresh');
   document.getElementById('settings').innerHTML=SRUI.icon('gear');
-  document.getElementById('serverHome').innerHTML=SRUI.icon('external','sr-icon-sm')+'내 서버 열기';
   const send=message=>new Promise((resolve,reject)=>chrome.runtime.sendMessage(message,response=>{
     if(chrome.runtime.lastError)reject(new Error('REQUEST_FAILED'));
     else if(response?.error)reject(new Error(response.error));
     else resolve(response?.data);
   }));
-  let generation=0, data=null, backendMode=null;
-  function setMode(mode){
-    modeBadge.hidden=!mode;
-    if(mode){modeBadge.textContent=mode==='selfhost'?'셀프호스팅':'클라우드';modeBadge.className=`sr-mode-pill sr-mode-pill--${mode}`;}
-  }
+  let generation=0, data=null;
   function setDot(state){statusDot.className=`sr-status-led sr-status-led--${state}`;}
   function applyTheme(){chrome.storage.sync.get('theme',value=>{const choice=value.theme||'system';document.documentElement.dataset.srTheme=choice==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):choice;});}
   applyTheme();
@@ -34,7 +28,6 @@
   // data = my-reports-v1 summary response; data.recent.items accumulate across "더 보기" (same window: the cursor keeps it)
   function render(){
     if(!data)return;
-    if(data.backend==='selfhost'){content.innerHTML=`<section class="sr-section sr-tile"><p id="crawlState" role="status">크롤링 상태 확인 중…</p><div class="sr-options-actions"><button id="crawlStart" class="sr-button">${SRUI.icon('play','sr-icon-sm')}크롤링 시작</button><button id="crawlStop" class="sr-button" hidden>${SRUI.icon('stop','sr-icon-sm')}크롤링 중지</button></div><p id="crawlResult" role="status"></p></section>`+SRUI.serverDashboard(data);refreshCrawl();return;}
     const recent=data.recent, period=`${SRUI.esc(data.recent_start.slice(5).replace('-','.'))}~${SRUI.esc(data.recent_end.slice(5).replace('-','.'))}`;
     const none=data.account?.contributor==='none'?'앱에서 커뮤니티 공유를 켜면 공유한 완료 신고가 여기 표시됩니다.':data.account?.contributor==='revoked'?'공유 동의를 철회한 계정입니다.':'최근 답변이 없습니다.';
     content.innerHTML=`<section class="sr-section"><div class="sr-total">완료 신고 <strong class="sr-numeric">${SRUI.count(data.summary.total)}</strong><span>건</span></div></section>${SRUI.summary(data.summary)}<section><div class="sr-list-heading"><span>최근 3일 답변 <small>${period}</small></span><span>${SRUI.count(recent.total)}건</span></div><div class="sr-record-list">${recent.items.length?recent.items.map(SRUI.record).join(''):`<p class="sr-section sr-note">${SRUI.esc(none)}</p>`}</div>${recent.next_cursor?'<button id="more" class="sr-button sr-more">신고 더 보기</button>':''}</section>`;
@@ -45,35 +38,18 @@
     });
   }
   async function load(fresh=false){
-    const run=++generation;data=null;account.textContent='계정 확인 중…';document.getElementById('serverHome').hidden=true;setDot('unknown');
+    const run=++generation;data=null;account.textContent='계정 확인 중…';setDot('unknown');
     content.innerHTML='<p class="sr-status-message" role="status">내 신고를 확인하는 중…</p>';
     let status;
     try{status=await send({type:'STATUS',fresh});}catch{content.innerHTML='<p class="sr-status-message">확장 상태를 확인하지 못했습니다.</p>';return;}
     if(run!==generation)return;
-    backendMode=status.backendMode||null;setMode(backendMode);
-    if(!backendMode){account.textContent='모드 선택 필요';content.innerHTML=`<p class="sr-status-message">${SRUI.errorText('MODE_REQUIRED')}</p>`;return;}
-    if(backendMode==='selfhost'){document.getElementById('serverHome').hidden=false;account.textContent=status.connected?`셀프호스팅 · 연결됨 · ${status.version}`:'셀프호스팅 · 연결 안 됨';setDot(status.connected?'ok':'bad');if(!status.connected){content.innerHTML=`<p class="sr-status-message" role="alert">${SRUI.esc(SRUI.errorText(status.error))}</p>`;return;}}
-    if(backendMode==='cloud'&&!status.signedIn){setDot('warn');loginPrompt(status.error==='NOT_CONFIGURED'?'확장 연결 설정이 필요합니다. 배포용 공개 설정을 확인해 주세요.':undefined,status.error!=='NOT_CONFIGURED');return;}
-    if(backendMode==='cloud'){account.textContent=status.name?`클라우드 · ${status.name} · 로그인됨`:'클라우드 · 로그인됨';setDot('ok');}
-    try{const result=await send({type:'SUMMARY',fresh});if(run!==generation)return;data=result;if(backendMode==='cloud')account.textContent=status.name?`클라우드 · ${status.name} · 조회 연결됨`:'클라우드 · 조회 연결됨';render();}
-    catch(error){if(run!==generation)return;account.textContent=`${backendMode==='cloud'?'클라우드':'셀프호스팅'} · 조회 연결 실패`;setDot('bad');if(backendMode==='cloud'&&error.message==='AUTH_REQUIRED')loginPrompt('로그인이 만료됐습니다. 다시 로그인해 주세요.');else content.innerHTML=`<p class="sr-status-message" role="alert">${SRUI.esc(SRUI.errorText(error.message))}</p>`;}
-  }
-  async function refreshCrawl(){
-    const run=generation;
-    try{const state=await send({type:'CRAWL_STATUS'});if(run!==generation||backendMode!=='selfhost')return;
-      document.getElementById('crawlState').textContent=state.running?'크롤링 실행 중':'크롤링 대기 중';
-      document.getElementById('crawlStart').hidden=state.running;document.getElementById('crawlStop').hidden=!state.running;
-      for(const [id,type] of [['crawlStart','CRAWL_START'],['crawlStop','CRAWL_STOP']])document.getElementById(id).onclick=async event=>{
-        event.currentTarget.disabled=true;
-        try{await send({type});if(run!==generation)return;document.getElementById('crawlResult').textContent=type==='CRAWL_START'?'크롤링 시작 요청 완료':'크롤링 중지 요청 완료';await refreshCrawl();}
-        catch(error){if(run===generation)document.getElementById('crawlResult').textContent=SRUI.errorText(error.message);}
-        finally{if(run===generation)document.getElementById(id).disabled=false;}
-      };
-    }catch(error){if(run===generation&&document.getElementById('crawlState'))document.getElementById('crawlState').textContent=SRUI.errorText(error.message);}
+    if(!status.signedIn){setDot('warn');loginPrompt(status.error==='NOT_CONFIGURED'?'확장 연결 설정이 필요합니다. 배포용 공개 설정을 확인해 주세요.':undefined,status.error!=='NOT_CONFIGURED');return;}
+    account.textContent=status.name?`클라우드 · ${status.name} · 로그인됨`:'클라우드 · 로그인됨';setDot('ok');
+    try{const result=await send({type:'SUMMARY',fresh});if(run!==generation)return;data=result;account.textContent=status.name?`클라우드 · ${status.name} · 조회 연결됨`:'클라우드 · 조회 연결됨';render();}
+    catch(error){if(run!==generation)return;account.textContent='클라우드 · 조회 연결 실패';setDot('bad');if(error.message==='AUTH_REQUIRED')loginPrompt('로그인이 만료됐습니다. 다시 로그인해 주세요.');else content.innerHTML=`<p class="sr-status-message" role="alert">${SRUI.esc(SRUI.errorText(error.message))}</p>`;}
   }
   chrome.runtime.onMessage.addListener(message=>{if(message?.type==='AUTH_CHANGED'||message?.type==='WORKER_RESTARTED'||message?.type==='STATUS_CHANGED')load();});
   document.getElementById('refresh').addEventListener('click',()=>load(true));
-  document.getElementById('serverHome').addEventListener('click',async()=>{try{await send({type:'OPEN_SERVER'});}catch(error){account.textContent=SRUI.errorText(error.message);}});
   document.getElementById('settings').addEventListener('click',()=>chrome.runtime.openOptionsPage());
   load();
 })();

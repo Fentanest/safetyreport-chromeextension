@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { worker, session, authKey, SUPA } from './worker-harness.mjs';
 const fixture = name => JSON.parse(readFileSync(`contracts/my-reports/fixtures/${name}.json`,'utf8'));
-const config = { serverUrl:'http://localhost:6819', apiKey:'private-server-key', notifyCrawlDone:true, pollInterval:5 };
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 test('worker: four-character cloud query reaches server, short-query rejection is explicit, and supported results share flight/cache', async () => {
   let supported = false;
-  const app = await worker({ local: { backendMode: 'cloud', [authKey]: session('a') }, fetchImpl: async (_url, options) => {
+  const app = await worker({ local: { [authKey]: session('a') }, fetchImpl: async (_url, options) => {
     const body = JSON.parse(options.body); assert.equal(body.query, '5902');
     return supported
       ? new Response(JSON.stringify({ ...fixture('search-empty'), kind: 'vehicle', query_normalized: '5902' }))
@@ -21,42 +20,28 @@ test('worker: four-character cloud query reaches server, short-query rejection i
   assert.equal(first.summary.total, 0); assert.deepEqual(first, second);
   await app.send(query, 'content'); assert.equal(app.calls.filter(c => c.url).length, 2);
 });
-test('worker: four-character selfhost search passes both validators and reuses its cache', async () => {
-  const app = await worker({ local: { backendMode: 'selfhost', selfhost: config }, fetchImpl: async url => {
-    if (url.endsWith('/server/version')) return new Response(JSON.stringify({ status: 'success', version: '3.0.0', protocol_version: 3, supported_client_protocols: [3], minimum_server_major: 3 }));
-    assert.ok(url.endsWith('/vehicle/5902'));
-    return new Response(JSON.stringify({ status: 'success', count: 0, data: [] }));
-  } });
-  const query = { type: 'SEARCH', kind: 'vehicle', query: '5902' };
-  assert.equal((await app.send(query, 'content')).summary.total, 0);
-  await app.send(query, 'content'); assert.equal(app.calls.filter(c => c.url).length, 2);
-});
-test('worker: durable migration, trusted storage, explicit selection and distinct logout',async()=>{
-  const app=await worker({sync:config});
-  assert.equal(app.stores.local.backendMode,'selfhost');assert.deepEqual(app.stores.local.selfhost,config);
-  assert.equal(app.stores.sync.apiKey,undefined);assert.equal(app.calls[0].accessLevel.accessLevel,'TRUSTED_CONTEXTS');
-  app.stores.local[authKey]=session('a');
-  await app.send({type:'SET_MODE',backendMode:'cloud'});
-  assert.equal(app.alarms.size,0);assert.deepEqual(app.stores.local.selfhost,config);assert.ok(app.stores.local[authKey]);
-  await app.send({type:'SET_MODE',backendMode:'selfhost'});
-  assert.equal(app.calls.filter(call=>call.auth).length,0);assert.equal(app.alarms.size,1);
-  await assert.rejects(app.send({type:'LOGOUT'}),/MODE_UNSUPPORTED/);
-  await app.send({type:'SET_MODE',backendMode:'cloud'});await app.send({type:'LOGOUT'});
+test('worker: trusted storage and distinct logout; a restart keeps the session without any network call',async()=>{
+  const app=await worker({local:{[authKey]:session('a')}});
+  assert.equal(app.calls[0].accessLevel.accessLevel,'TRUSTED_CONTEXTS');
+  await app.send({type:'LOGOUT'});
   assert.equal(app.stores.local[authKey],undefined);
-  const restarted=await worker({local:app.stores.local,sync:app.stores.sync});
-  assert.equal((await restarted.send({type:'GET_SETTINGS'})).backendMode,'cloud');assert.equal(restarted.calls.filter(call=>call.url).length,0);
+  const restarted=await worker({local:{...app.stores.local,[authKey]:session('a')}});
+  assert.equal((await restarted.send({type:'STATUS'})).signedIn,true);assert.equal(restarted.calls.filter(call=>call.url).length,0);
 });
-test('worker: content cannot read settings or control crawl; unknown destination never proxies',async()=>{
-  const app=await worker({local:{backendMode:'cloud',[authKey]:session('a')}});
-  for(const type of ['GET_SETTINGS','SAVE_SERVER','SET_MODE','CRAWL_START','SUMMARY','LOGIN','LOGOUT'])await assert.rejects(app.send({type},'content'),/FORBIDDEN/);
+test('worker: content cannot control the extension; removed PC messages and unknown destinations never proxy',async()=>{
+  const app=await worker({local:{[authKey]:session('a')}});
+  for(const type of ['SUMMARY','LOGIN','LOGOUT','TEST_CLOUD'])await assert.rejects(app.send({type},'content'),/FORBIDDEN/);
+  // The PC (selfhost) control messages no longer exist for anyone, including the trusted pages.
+  for(const type of ['GET_SETTINGS','SET_MODE','SAVE_SERVER','TEST_SERVER','OPEN_SERVER','CRAWL_STATUS','CRAWL_START','CRAWL_STOP'])
+    for(const role of ['trusted','content'])await assert.rejects(app.send({type,serverUrl:'http://192.168.0.2:6819',apiKey:'k'},role),/FORBIDDEN|UNKNOWN_MESSAGE/);
   await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'590',url:'http://evil'},'content'),/INVALID_QUERY/);
   await assert.rejects(app.send({type:'FETCH_URL',url:'http://evil'},'content'),/FORBIDDEN/);
   assert.equal(app.calls.filter(call=>call.url).length,0);
 });
-test('worker: cloud requests only Supabase, allowlist DTO, own account cache and late response discarded on switch',async()=>{
+test('worker: cloud requests only Supabase, allowlist DTO, own account cache and late response discarded on account change',async()=>{
   let release;
   const raw=fixture('search-vehicle-first-page');raw.secret='PRIVATE';raw.reports.items[0].apiKey='PRIVATE';
-  const app=await worker({local:{backendMode:'cloud',selfhost:config,[authKey]:session('a')},fetchImpl:async(url,options)=>{
+  const app=await worker({local:{[authKey]:session('a')},fetchImpl:async(url,options)=>{
     assert.ok(url.startsWith(SUPA));assert.equal(options.headers['X-API-Key'],undefined);assert.equal(options.headers['X-SafetyReport-Protocol'],undefined);
     if(release===undefined)return new Response(JSON.stringify(raw));
     return new Promise(resolve=>{release=()=>resolve(new Response(JSON.stringify(raw)));});
@@ -67,218 +52,76 @@ test('worker: cloud requests only Supabase, allowlist DTO, own account cache and
   await app.chrome.storage.local.set({[authKey]:session('b')});await app.send(query);assert.equal(app.calls.filter(call=>call.url).length,2);
   release=null;const late=app.send({...query,fresh:true});const handled=assert.rejects(late,/STALE_SESSION/);
   while(typeof release!=='function')await new Promise(r=>setTimeout(r,0));
-  await app.send({type:'SET_MODE',backendMode:'selfhost'});release();await handled;
+  await app.chrome.storage.local.set({[authKey]:session('c')});release();await handled;
   assert.equal(app.calls.filter(call=>call.url&&!call.url.startsWith(SUPA)).length,0);
   assert.equal(app.calls.filter(call=>call.auth==='signOut').length,0);
 });
 test('worker: cloud expiry refresh once, gateway 401 retry once, offline and forbidden are errors',async()=>{
   let count=0;
-  const app=await worker({local:{backendMode:'cloud',[authKey]:session('a')},fetchImpl:async()=>{
+  const app=await worker({local:{[authKey]:session('a')},fetchImpl:async()=>{
     count++;return count===1?new Response(JSON.stringify({error:{code:'SESSION_EXPIRED'}}),{status:401}):new Response(JSON.stringify(fixture('summary-first-page')));
   }});
   await app.send({type:'SUMMARY'});assert.equal(count,2);assert.equal(app.calls.filter(c=>c.auth==='refreshSession').length,1);
-  const blocked=await worker({local:{backendMode:'cloud',[authKey]:session('a')},fetchImpl:async()=>new Response(JSON.stringify({error:{code:'ACCOUNT_INELIGIBLE'}}),{status:403})});
+  const blocked=await worker({local:{[authKey]:session('a')},fetchImpl:async()=>new Response(JSON.stringify({error:{code:'ACCOUNT_INELIGIBLE'}}),{status:403})});
   await assert.rejects(blocked.send({type:'SUMMARY'}),/ACCESS_DENIED/);
 });
-const probe={status:'success',version:'3.0.0.0-dev',protocol_version:3,supported_client_protocols:[3],minimum_server_major:3};
-const selfRows=[{id:'9100000001',신고번호:'SPP-2026-123456',차량번호:'12가3456',처리상태:'수용'},{id:'9100000002',신고번호:null,처리상태:'처리중'}];
-const mockSelfhost=(url)=>new Response(JSON.stringify(url.endsWith('/server/version')?probe:url.endsWith('/crawl/status')?{status:'success',running:false,pending:0}:url.endsWith('/summary')?{status:'success',data:{total:2,processingCount:1,recent_answers:selfRows}}:url.endsWith('/crawl/done/ext')?{status:'success',done:true,changes:[{notification_kind:'duplicate',duplicate_change_type:'group_added',representative_report_number:'SPP-2026-123456'}]}:{status:'success',count:selfRows.length,data:selfRows}));
-const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
-for (const change of ['mode', 'server', 'round-trip']) {
-  test(`worker: TEST_SERVER cannot cache success after a ${change} change during storage cleanup`, async () => {
-    const app = await worker({ local: { backendMode: 'selfhost', selfhost: config, [authKey]: session('a') }, fetchImpl: mockSelfhost });
-    const entered = deferred(), resume = deferred();
-    const remove = app.chrome.storage.local.remove;
-    let held = false;
-    app.chrome.storage.local.remove = async keys => {
-      await remove(keys);
-      if (keys === 'selfhostBlocked' && !held) { held = true; entered.resolve(); await resume.promise; }
-    };
-    const pending = app.send({ type: 'TEST_SERVER' }).then(data => ({ data }), error => ({ error }));
-    await entered.promise;
-    if (change === 'server') await app.send({ type: 'SAVE_SERVER', ...config, serverUrl: 'http://localhost:9999' });
-    else {
-      await app.send({ type: 'SET_MODE', backendMode: 'cloud' });
-      if (change === 'round-trip') await app.send({ type: 'SET_MODE', backendMode: 'selfhost' });
-    }
-    resume.resolve();
-    const result = await pending;
-    assert.equal(result.error?.message, 'STALE_SESSION');
-    assert.equal(app.stores.local.srStatusCache, undefined, 'the old test must not persist success under the new settings');
-    const state = await app.send({ type: 'STATUS' });
-    assert.equal(state.backendMode, change === 'mode' ? 'cloud' : 'selfhost');
-    if (change === 'mode') assert.equal(state.signedIn, true);
-  });
-}
-test('worker: STATUS round trip starts a new flight and old completion cannot clear that flight', async () => {
+test('worker: STATUS after an account change starts a new flight and old completion cannot clear that flight', async () => {
   const old = deferred(), current = deferred(), entered = deferred();
   let reads = 0;
-  const app = await worker({ local: { backendMode: 'cloud', selfhost: config, [authKey]: session('a') }, auth: {
+  const app = await worker({ local: { [authKey]: session('a') }, auth: {
     getSession() { reads++; entered.resolve(); return reads === 1 ? old.promise : current.promise; },
   } });
   const first = app.send({ type: 'STATUS' });
   await entered.promise;
-  await app.send({ type: 'SET_MODE', backendMode: 'selfhost' });
-  await app.send({ type: 'SET_MODE', backendMode: 'cloud' });
+  await app.chrome.storage.local.set({ [authKey]: session('b') });
   const second = app.send({ type: 'STATUS' });
   await new Promise(resolve => setTimeout(resolve, 0));
   old.resolve({ data: { session: session('a') } });
   await first;
   const third = app.send({ type: 'STATUS' });
   await new Promise(resolve => setTimeout(resolve, 0));
-  current.resolve({ data: { session: session('a') } });
+  current.resolve({ data: { session: session('b') } });
   assert.equal((await second).signedIn, true);
   assert.equal((await third).signedIn, true);
   assert.equal(reads, 2, 'new-generation calls share only their own flight, even after the old flight completes');
 });
-test('worker: selfhost bypasses cloud auth/expiry, slow responses cannot survive a mode/server change',async()=>{
-  let release=null, slow=false;
-  const expired={...session('a'),expires_at:0};
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config,[authKey]:expired},fetchImpl:async(url,options)=>{
-    assert.ok(!url.startsWith(SUPA));
-    if(slow&&url.includes('/vehicle/'))return new Promise(resolve=>{release=()=>resolve(mockSelfhost(url));});
-    return mockSelfhost(url);
-  }});
-  await app.send({type:'STATUS'});await app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content');
-  await app.send({type:'SUMMARY'});assert.equal(app.calls.filter(c=>c.auth).length,0);
-  await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'590'},'content'),/INVALID_QUERY/);
-  slow=true;const query={type:'SEARCH',kind:'vehicle',query:'13가3456'};
-  const old=app.send(query,'content'),checked=assert.rejects(old,/STALE_SESSION/);
-  while(!release)await new Promise(r=>setTimeout(r,0));
-  await app.send({type:'SET_MODE',backendMode:'cloud'});assert.equal(app.alarms.size,0);
-  await app.send({type:'SET_MODE',backendMode:'selfhost'});
-  await app.send({type:'SAVE_SERVER',...config,serverUrl:'http://192.168.1.2:6819',apiKey:'new-private-key'});
-  release();await checked;slow=false;
-  await app.send(query,'content');
-  assert.ok(app.calls.filter(c=>c.url?.includes('/vehicle/')).at(-1).url.startsWith('http://192.168.1.2:6819'));
-  assert.equal(app.calls.filter(c=>c.auth).length,0);
-});
-test('worker: polling dedupes, persistent transitions restore, notifications and badges stop in cloud',async()=>{
-  let running=false, done=false;
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config,[authKey]:session('a')},fetchImpl:async(url)=>{
-    if(url.endsWith('/crawl/status'))return new Response(JSON.stringify({status:'success',running,pending:0}));
-    if(url.endsWith('/crawl/done/ext')){const available=done;done=false;return available?mockSelfhost(url):Response.json({status:'success',done:false});}
-    return mockSelfhost(url);
-  }});
-  const poll=()=>app.chrome.alarms.onAlarm.emit({name:'safetyreport_poll'});
-  poll();poll();await new Promise(r=>setTimeout(r,30));
-  assert.equal(app.calls.filter(c=>c.url?.endsWith('/crawl/status')).length,1);assert.equal(app.notices.size,0);
-  assert.equal(app.badges.at(-1),'1');assert.equal(app.stores.local.srCrawlState.running,false);
-  running=true;poll();await new Promise(r=>setTimeout(r,30));assert.equal(app.notices.size,1);
-  running=false;done=true;poll();await new Promise(r=>setTimeout(r,30));assert.ok([...app.notices.values()].some(x=>x.message.includes('신규 중복군')));
-  await app.send({type:'SET_MODE',backendMode:'cloud'});const count=app.calls.filter(c=>c.url).length;
-  poll();await new Promise(r=>setTimeout(r,20));assert.equal(app.calls.filter(c=>c.url).length,count);assert.equal(app.notices.size,0);assert.equal(app.badges.at(-1),'');
-});
-test('worker: a crawl completed between alarms is consumed once; disabled notifications never consume it',async()=>{
-  let done=false;
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:async url=>{
-    if(url.endsWith('/crawl/done/ext')){const available=done;done=false;return available?mockSelfhost(url):Response.json({status:'success',done:false});}
-    return mockSelfhost(url);
-  }});
-  const poll=()=>vm.runInContext('pollCrawlStatus()',app.context);
-  await poll();assert.equal(app.notices.size,0);
-  done=true;await Promise.all([poll(),poll()]);
-  assert.equal(app.notices.size,1);assert.ok([...app.notices.values()][0].title.startsWith('크롤링 완료'));
-  const notice=[...app.notices.values()][0];await poll();assert.equal([...app.notices.values()][0],notice);
-  assert.equal(app.calls.filter(c=>c.url?.endsWith('/crawl/done/ext')).length,3);
-  done=true;app.chrome.permissions.contains=async request=>!request.permissions?.includes('notifications');
-  await poll();assert.equal(done,true);
-  await app.send({type:'SAVE_SERVER',...config,notifyCrawlDone:false});app.chrome.permissions.contains=async()=>true;
-  await poll();assert.equal(done,true);
-  await app.send({type:'SET_MODE',backendMode:'cloud'});const calls=app.calls.length;await poll();assert.equal(app.calls.length,calls);
-});
-test('worker: restart restores only the last successful badge for the same server credential',async()=>{
-  const app=await worker({local:{backendMode:'selfhost',selfhost:{...config,notifyCrawlDone:false}},fetchImpl:mockSelfhost});
-  await vm.runInContext('pollCrawlStatus()',app.context);assert.equal(app.badges.at(-1),'1');
-  const restarted=await worker({local:app.stores.local,fetchImpl:mockSelfhost});
-  assert.equal(restarted.badges.at(-1),'1');assert.equal(restarted.calls.filter(c=>c.url).length,0);
-  for(const local of [
-    {...app.stores.local,backendMode:'cloud'},
-    {...app.stores.local,selfhost:{...config,apiKey:'different-key'}},
-    {...app.stores.local,selfhost:{...config,serverUrl:'http://localhost:6820'}},
-    {...app.stores.local,selfhostBlocked:'CLIENT_PROTOCOL_UNSUPPORTED'},
-  ]){const changed=await worker({local,fetchImpl:mockSelfhost});assert.equal(changed.badges.at(-1),'');}
-});
-test('worker: failed polling clears the durable badge so a restart cannot restore a stale count',async()=>{
-  let offline=false;
-  const app=await worker({local:{backendMode:'selfhost',selfhost:{...config,notifyCrawlDone:false}},fetchImpl:async url=>{
-    if(offline)throw new TypeError('offline');return mockSelfhost(url);
-  }});
-  await vm.runInContext('pollCrawlStatus()',app.context);assert.equal(app.badges.at(-1),'1');
-  offline=true;await vm.runInContext('pollCrawlStatus()',app.context);assert.equal(app.badges.at(-1),'');
-  const restarted=await worker({local:app.stores.local,fetchImpl:mockSelfhost});assert.equal(restarted.badges.at(-1),'');
-});
-test('worker: HTTP 409 disables periodic retries across restart until an explicit probe succeeds',async()=>{
-  let rejected=true;
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:async(url)=>url.endsWith('/server/version')?mockSelfhost(url):rejected?new Response(JSON.stringify({status:'error',code:'CLIENT_PROTOCOL_UNSUPPORTED'}),{status:409}):mockSelfhost(url)});
-  await assert.rejects(app.send({type:'SUMMARY'}),/CLIENT_PROTOCOL_UNSUPPORTED/);assert.equal(app.alarms.size,0);
-  const restart=await worker({local:app.stores.local,fetchImpl:mockSelfhost});assert.equal(restart.alarms.size,0);
-  rejected=false;await app.send({type:'TEST_SERVER'});assert.equal(app.alarms.size,1);
-});
-test('worker: STATUS shows the cached connection instantly; it only re-checks when stale, forced, or settings change',async()=>{
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:mockSelfhost});
+test('worker: STATUS shows the cached state instantly; it only re-checks when forced, stale, or the account changes',async()=>{
+  const app=await worker({local:{[authKey]:session('a')}});
+  const reads=()=>app.calls.filter(c=>c.auth==='getSession').length;
   const first=await app.send({type:'STATUS'});
-  assert.equal(first.backendMode,'selfhost');assert.equal(first.connected,true);assert.equal(first.version,probe.version);assert.equal(first.error,null);
-  const afterFirst=app.calls.filter(c=>c.url).length;assert.ok(afterFirst>0,'the first-ever check must still probe the server once');
-  // A popup reopened moments later must not repeat the network round trip.
-  const second=await app.send({type:'STATUS'});
-  assert.equal(second.connected,true);assert.equal(second.version,first.version);assert.equal(app.calls.filter(c=>c.url).length,afterFirst);
-  // The explicit refresh affordance must still force a live check.
-  const forced=await app.send({type:'STATUS',fresh:true});
-  assert.equal(forced.connected,true);assert.equal(forced.version,first.version);assert.ok(app.calls.filter(c=>c.url).length>afterFirst);
-  const afterForced=app.calls.filter(c=>c.url).length;
-  // Saving a different server is one of the few moments a check must happen again.
-  await app.send({type:'SAVE_SERVER',...config,serverUrl:'http://192.168.1.3:6819',apiKey:'another-private-key'});
-  const afterNewServer=await app.send({type:'STATUS'});
-  assert.equal(afterNewServer.connected,true);assert.ok(app.calls.filter(c=>c.url).length>afterForced);
+  assert.equal(first.connected,true);assert.equal(first.signedIn,true);assert.equal(first.name,'테스트 계정');assert.equal(first.backendMode,undefined);
+  assert.equal(reads(),1,'the first-ever check must still read the session once');
+  const second=await app.send({type:'STATUS'});assert.equal(second.signedIn,true);assert.equal(reads(),1);
+  await app.send({type:'STATUS',fresh:true});assert.equal(reads(),2);
+  await app.chrome.storage.local.set({[authKey]:session('b')});
+  await app.send({type:'STATUS'});assert.equal(reads(),3);
 });
-test('worker: a cached connection status survives a worker restart without any network call',async()=>{
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:mockSelfhost});
-  const first=await app.send({type:'STATUS'});assert.equal(first.connected,true);
+test('worker: a cached STATUS survives a worker restart without any network call; a changed account does not reuse it',async()=>{
+  const app=await worker({local:{[authKey]:session('a')}});
+  const first=await app.send({type:'STATUS'});assert.equal(first.signedIn,true);
   const restarted=await worker({local:app.stores.local,fetchImpl:async()=>{throw new Error('no network expected after a restart');}});
-  const restored=await restarted.send({type:'STATUS'});
-  assert.equal(restored.connected,true);assert.equal(restored.version,first.version);assert.equal(restarted.calls.filter(c=>c.url).length,0);
+  const reads=()=>restarted.calls.filter(c=>c.auth==='getSession').length;
+  assert.equal((await restarted.send({type:'STATUS'})).signedIn,true);assert.equal(reads(),0);assert.equal(restarted.calls.filter(c=>c.url).length,0);
+  const other=await worker({local:{...app.stores.local,[authKey]:session('b')}});
+  await other.send({type:'STATUS'});assert.equal(other.calls.filter(c=>c.auth==='getSession').length,1);
 });
-test('worker: a background incompatibility failure updates the cached STATUS without another round trip',async()=>{
-  let rejected=true;
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config},fetchImpl:async(url)=>url.endsWith('/server/version')?mockSelfhost(url):rejected?new Response(JSON.stringify({status:'error',code:'CLIENT_PROTOCOL_UNSUPPORTED'}),{status:409}):mockSelfhost(url)});
-  await assert.rejects(app.send({type:'SUMMARY'}),/CLIENT_PROTOCOL_UNSUPPORTED/);
-  const before=app.calls.filter(c=>c.url).length;
-  const state=await app.send({type:'STATUS'});
-  assert.equal(state.backendMode,'selfhost');assert.equal(state.connected,false);assert.equal(state.version,null);assert.equal(state.error,'CLIENT_PROTOCOL_UNSUPPORTED');
-  assert.equal(app.calls.filter(c=>c.url).length,before,'the failure already told STATUS; it must not probe again right away');
-});
-test('real Supabase SDK: inactive selfhost never refreshes an expired persisted cloud session',async()=>{
-  const expired=JSON.stringify({...session('a'),expires_at:1});
-  const app=await worker({realSdk:true,local:{backendMode:'selfhost',selfhost:config,[authKey]:expired},fetchImpl:mockSelfhost});
-  await app.send({type:'STATUS'});await app.send({type:'SUMMARY'});
-  assert.equal(app.calls.filter(c=>c.url?.startsWith(SUPA)).length,0);assert.equal(app.stores.local[authKey],expired);
-});
-test('real Supabase SDK: abort + rapid mode round trip does not let old refresh retries send or log out',async()=>{
+test('real Supabase SDK: abort + account change does not let an old refresh retry send or persist tokens',async()=>{
   let release;
   const expired=JSON.stringify({...session('a'),expires_at:1});
-  const app=await worker({realSdk:true,local:{backendMode:'cloud',selfhost:config,[authKey]:expired},fetchImpl:async(url)=>{
-    if(url.includes('/auth/v1/token'))return new Promise(resolve=>{release=()=>resolve(new Response(JSON.stringify({...session('a'),expires_in:3600,token_type:'bearer'})));});
-    return mockSelfhost(url);
+  const app=await worker({realSdk:true,local:{[authKey]:expired},fetchImpl:async(url)=>{
+    if(url.includes('/auth/v1/token'))return new Promise(resolve=>{release=()=>resolve(new Response(JSON.stringify({...session('a'),access_token:'late-new-access',refresh_token:'late-new-refresh',expires_in:3600,token_type:'bearer'})));});
+    return new Response('{}');
   }});
   const pending=app.send({type:'SUMMARY'}),rejection=assert.rejects(pending,/STALE_SESSION/);
   while(!release)await new Promise(r=>setTimeout(r,0));
-  await app.send({type:'SET_MODE',backendMode:'selfhost'});await app.send({type:'SET_MODE',backendMode:'cloud'});release();await rejection;
-  assert.equal(app.calls.filter(c=>c.url?.includes('/auth/v1/token')).length,1);assert.equal(app.stores.local[authKey],expired);
+  const other=JSON.stringify(session('b'));
+  await app.chrome.storage.local.set({[authKey]:other});release();await rejection;
+  assert.equal(app.calls.filter(c=>c.url?.includes('/auth/v1/token')).length,1);assert.equal(app.stores.local[authKey],other);
 });
-test('worker: explicit offline logout clears own local session; mode selection preserves it',async()=>{
-  const app=await worker({local:{backendMode:'cloud',[authKey]:JSON.stringify(session('a'))},auth:{signOut:async()=>({error:{message:'offline'}})}});
-  await app.send({type:'LOGOUT'});assert.equal(app.stores.local[authKey],undefined);
-});
-test('worker: testing an unsaved server does not overwrite settings or resume its blocked poller',async()=>{
-  const app=await worker({local:{backendMode:'selfhost',selfhost:config,selfhostBlocked:'CLIENT_PROTOCOL_UNSUPPORTED'},fetchImpl:mockSelfhost});
-  const state=await app.send({type:'TEST_SERVER',...config,serverUrl:'http://192.168.1.9:6819'});
-  assert.equal(state.active,false);assert.deepEqual(app.stores.local.selfhost,config);assert.equal(app.alarms.size,0);
-});
-test('real Supabase SDK: a late response body cannot persist refreshed tokens after a mode round trip',async()=>{
+test('real Supabase SDK: a late response body cannot persist refreshed tokens after an account change',async()=>{
   let release;
   const expired=JSON.stringify({...session('a'),expires_at:1});
-  const app=await worker({realSdk:true,local:{backendMode:'cloud',selfhost:config,[authKey]:expired},fetchImpl:async(url)=>{
+  const app=await worker({realSdk:true,local:{[authKey]:expired},fetchImpl:async(url)=>{
     assert.ok(url.includes('/auth/v1/token'));
     const response=new Response('{}');
     response.json=()=>new Promise(resolve=>{release=()=>resolve({...session('a'),access_token:'late-new-access',refresh_token:'late-new-refresh',expires_in:3600,token_type:'bearer'});});
@@ -286,35 +129,37 @@ test('real Supabase SDK: a late response body cannot persist refreshed tokens af
   }});
   const pending=app.send({type:'SUMMARY'}),rejection=assert.rejects(pending,/STALE_SESSION/);
   while(!release)await new Promise(r=>setTimeout(r,0));
-  await app.send({type:'SET_MODE',backendMode:'selfhost'});await app.send({type:'SET_MODE',backendMode:'cloud'});release();await rejection;
-  assert.equal(app.stores.local[authKey],expired);assert.equal(app.calls.filter(c=>c.url).length,1);
+  const other=JSON.stringify(session('b'));
+  await app.chrome.storage.local.set({[authKey]:other});release();await rejection;
+  assert.equal(app.stores.local[authKey],other);assert.equal(app.calls.filter(c=>c.url).length,1);
 });
-
-test('worker: official HTTP and HTTPS pages can query each backend but cannot access credentials or control it',async()=>{
-  for(const backendMode of ['selfhost','cloud']){
-    const app=await worker({local:{backendMode,selfhost:config,[authKey]:session('a')},fetchImpl:async url=>backendMode==='selfhost'?mockSelfhost(url):Response.json(fixture('search-vehicle-first-page'))});
-    // The real site serves identical content on the bare host (no redirect either way); both must work.
-    for(const url of ['http://www.safetyreport.go.kr/#report','https://www.safetyreport.go.kr/#report','http://safetyreport.go.kr/#report','https://safetyreport.go.kr/#report']){
-      const result=await app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',{url});
-      assert.equal(result.summary.total,backendMode==='selfhost'?selfRows.length:fixture('search-vehicle-first-page').summary.total);
-      assert.equal(result.apiKey,undefined);assert.equal(result.access_token,undefined);
-      for(const type of ['GET_SETTINGS','SET_MODE','SAVE_SERVER','LOGIN','LOGOUT','CRAWL_START'])await assert.rejects(app.send({type},'content',{url}),/FORBIDDEN/);
-    }
-    const networkCount=app.calls.filter(call=>call.url).length;
-    for(const sender of [
-      {url:'https://www.safetyreport.go.kr.evil.example/'},
-      {url:'https://safetyreport.go.kr.evil.example/'},
-      {url:'https://www.safetyreport.go.kr@evil.example/'},
-      {url:'https://evil.example/www.safetyreport.go.kr/'},
-      {url:'ftp://www.safetyreport.go.kr/'},
-      {url:'ftp://safetyreport.go.kr/'},
-      {url:'https://wwwsafetyreport.go.kr/'},
-      {url:'https://www.safetyreport.go.kr:444/'},
-      {url:'http://www.safetyreport.go.kr/',frameId:1},
-      {url:'https://www.safetyreport.go.kr/',id:'another-extension'},
-    ])await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',sender),/MESSAGE_REJECTED/);
-    assert.equal(app.calls.filter(call=>call.url).length,networkCount);
+test('worker: explicit offline logout clears own local session',async()=>{
+  const app=await worker({local:{[authKey]:JSON.stringify(session('a'))},auth:{signOut:async()=>({error:{message:'offline'}})}});
+  await app.send({type:'LOGOUT'});assert.equal(app.stores.local[authKey],undefined);
+});
+test('worker: official HTTP and HTTPS pages can query but cannot access credentials or control the extension',async()=>{
+  const app=await worker({local:{[authKey]:session('a')},fetchImpl:async()=>Response.json(fixture('search-vehicle-first-page'))});
+  // The real site serves identical content on the bare host (no redirect either way); both must work.
+  for(const url of ['http://www.safetyreport.go.kr/#report','https://www.safetyreport.go.kr/#report','http://safetyreport.go.kr/#report','https://safetyreport.go.kr/#report']){
+    const result=await app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',{url});
+    assert.equal(result.summary.total,fixture('search-vehicle-first-page').summary.total);
+    assert.equal(result.apiKey,undefined);assert.equal(result.access_token,undefined);
+    for(const type of ['LOGIN','LOGOUT','TEST_CLOUD','SUMMARY'])await assert.rejects(app.send({type},'content',{url}),/FORBIDDEN/);
   }
+  const networkCount=app.calls.filter(call=>call.url).length;
+  for(const sender of [
+    {url:'https://www.safetyreport.go.kr.evil.example/'},
+    {url:'https://safetyreport.go.kr.evil.example/'},
+    {url:'https://www.safetyreport.go.kr@evil.example/'},
+    {url:'https://evil.example/www.safetyreport.go.kr/'},
+    {url:'ftp://www.safetyreport.go.kr/'},
+    {url:'ftp://safetyreport.go.kr/'},
+    {url:'https://wwwsafetyreport.go.kr/'},
+    {url:'https://www.safetyreport.go.kr:444/'},
+    {url:'http://www.safetyreport.go.kr/',frameId:1},
+    {url:'https://www.safetyreport.go.kr/',id:'another-extension'},
+  ])await assert.rejects(app.send({type:'SEARCH',kind:'vehicle',query:'12가3456'},'content',sender),/MESSAGE_REJECTED/);
+  assert.equal(app.calls.filter(call=>call.url).length,networkCount);
 });
 test('manifest: official HTTP/HTTPS injection and Shadow DOM resources share the same exact host scope',()=>{
   const manifest=JSON.parse(readFileSync('manifest.json','utf8'));

@@ -23,10 +23,7 @@
 .sr-options-actions .sr-button {min-height:38px;padding-inline:14px;}
 .sr-options-card [role="status"]:not(:empty),.sr-options-card [role="alert"]:not(:empty) {font-size:13px;line-height:21px;padding:10px 12px;margin:12px 0 0;border:1px solid var(--sr-border);border-radius:var(--sr-radius-sm);background:var(--sr-surface-2);overflow-wrap:anywhere;}
 .sr-options-card [role="status"]:empty,.sr-options-card [role="alert"]:empty {margin:0;}
-.sr-options-card #modeStatus {padding:0;border:0;background:transparent;color:var(--sr-text-muted);margin-top:4px;}
 .sr-options-card #authError:not(:empty) {color:var(--sr-tone-reject-fg);background:var(--sr-tone-reject-bg);border-color:var(--sr-tone-reject-border);}
-.sr-options:has(.sr-status-led--ok) #serverStatus {border-left:3px solid var(--sr-tone-accept-fg);}
-.sr-options:has(.sr-status-led--bad) #serverStatus {border-left:3px solid var(--sr-tone-reject-fg);}
 .sr-options-card #testCloud {margin-block:12px;}
 .sr-options-card #cloudTestResult:not(:empty) {margin-top:0;margin-bottom:12px;}
 .sr-options-card:last-child p {font-size:13px;line-height:22px;color:var(--sr-text-muted);}

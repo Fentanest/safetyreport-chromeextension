@@ -17,7 +17,6 @@
   const DATA_TTL = 60_000;
   const EDGE = 12, GAP = 10;
   const ADDRESS_WIDTH = 364, FOLDED_ADDRESS_WIDTH = 220, VEHICLE_WIDTH = 420, MIN_VEHICLE_WIDTH = 280;
-  let backendMode = null;
   let theme = 'system', scanQueued = false, positionQueued = false;
   const themeValue = () => theme === 'system'
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
@@ -180,7 +179,7 @@
     const s = states[kind], p = panel(kind), data = s.data;
     if (message) s.status = message;
     const heading = kind === 'vehicle' ? '이 차량의 내 신고' : '이 주소의 내 신고';
-    const scope = data?.backend === 'selfhost' ? '내 서버의 신고 · 처리중 포함' : backendMode === 'selfhost' ? '셀프호스팅 · 내 서버' : backendMode === 'cloud' ? '클라우드 · 내가 공유한 완료 신고' : '현재 선택한 백엔드로 조회';
+    const scope = '클라우드 · 내가 공유한 완료 신고';
     const total = Number(data?.summary?.total || 0), missing = Number(data?.summary?.report_number_missing || 0);
     // a search that genuinely matched nothing doesn't need the result/disposition tiles or an empty-list box;
     // one line says so. This only changes the content-script panels — shared-ui.js's summary()/records() (used
@@ -209,8 +208,7 @@
     try {
       const result=await send({type:'SEARCH',kind,query,fresh:retried});
       if (generation!==s.generation || query!==s.query || !s.open || s.dismissed || (kind === 'vehicle' && !s.node?.isConnected)) return;
-      backendMode=result.backend || 'cloud';
-      s.data={backend:backendMode,summary:result.summary,reports:result.reports,managers:result.managers}; s.loadedAt=Date.now(); render(kind);
+      s.data={summary:result.summary,reports:result.reports,managers:result.managers}; s.loadedAt=Date.now(); render(kind);
     } catch(error) {
       if (generation!==s.generation || !s.open) return;
       if (error.message==='DATASET_CHANGED' && !retried) { s.loading=false; return await search(kind,true); }
@@ -368,7 +366,6 @@
   window.addEventListener('hashchange',()=>{invalidate('vehicle');hide('vehicle');states.vehicle.query='';states.vehicle.composing=false;queueScan();queuePosition();});
   chrome.runtime.onMessage.addListener(message=>{
     if(!['AUTH_CHANGED','DATA_INVALIDATED','WORKER_RESTARTED'].includes(message?.type))return;
-    backendMode=null;
     for(const kind of ['vehicle','address']){
       invalidate(kind); // Erase prior-account data immediately, including hidden/collapsed DOM.
       const s=states[kind];

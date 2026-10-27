@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { buildRequest, classifyError, retryAfterSeconds, projectCloudDto } from './myReportsClient.js';
-import { migrateSettings, validMode, validateSettings, serverOrigin } from './backendConfig.js';
-import { createSelfhostClient } from './selfhostClient.js';
+import { migrateFromSelfhost } from './migration.js';
 
 const SUPABASE_URL = __SUPABASE_URL__;
 const PUBLISHABLE_KEY = __SUPABASE_KEY__;
@@ -9,7 +8,7 @@ const configured = Boolean(SUPABASE_URL && PUBLISHABLE_KEY);
 const AUTH_KEY = configured ? `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token` : null;
 const CACHE_TTL = 60_000;
 // STATUS is shown instantly from this durable cache; the live check below only
-// refreshes it in the background (settings change, prior failure, or elapsed TTL).
+// refreshes it in the background (account change, prior failure, or elapsed TTL).
 const STATUS_TTL_OK = 5 * 60_000;
 const STATUS_TTL_ERROR = 30_000;
 const cache = new Map();
@@ -24,13 +23,7 @@ let blockedUntil = 0;
 let statusCache = null; // { identity, result, at } — survives worker restarts via srStatusCache
 let statusFlight = null;
 let client;
-let settings;
 let initialized = false;
-let settingsFlight = Promise.resolve();
-let pollFlight = null;
-const ALARM = 'safetyreport_poll';
-const selfhostRequest = createSelfhostClient({ version: chrome.runtime.getManifest().version,
-  permission: origin => chrome.permissions.contains({ origins: [origin] }) });
 
 const storage = {
   getItem: async key => (await chrome.storage.local.get(key))[key] ?? null,
@@ -40,39 +33,16 @@ const storage = {
 
 const ready = (async () => {
   await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
-  const [local, sync] = await Promise.all([chrome.storage.local.get(null), chrome.storage.sync.get(null)]);
-  settings = migrateSettings(local, sync);
+  // 1.3.0 removed the PC (selfhost) backend: stop its leftovers before anything else runs.
+  // A failure leaves the migration unrecorded so the next worker start retries it; cloud still starts.
+  await migrateFromSelfhost(chrome).catch(() => {});
+  const { srStatusCache } = await chrome.storage.local.get('srStatusCache');
   // A worker restart must not force a fresh network check: restore the last known status so
-  // the popup/options can show it immediately, same spirit as the crawl badge restore below.
-  if (local.srStatusCache && typeof local.srStatusCache === 'object') statusCache = local.srStatusCache;
-  await chrome.storage.local.set(settings);
-  await chrome.storage.sync.remove(['serverUrl', 'apiKey', 'backendMode', 'notifyCrawlDone', 'pollInterval']);
-  await chrome.storage.local.remove(['serverUrl', 'apiKey', 'notifyCrawlDone', 'pollInterval', 'wasCrawling']);
-  await chrome.action.setBadgeText({ text: '' });
-  await resetAlarm();
+  // the popup/options can show it immediately.
+  if (srStatusCache && typeof srStatusCache === 'object' && String(srStatusCache.identity).startsWith('cloud:')) statusCache = srStatusCache;
   initialized = true;
   clearCache(true, 'WORKER_RESTARTED');
-  await restoreBadge();
 })();
-
-async function selfhostIdentity(config) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.apiKey));
-  const fingerprint = [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('');
-  return JSON.stringify([config.serverUrl, fingerprint]);
-}
-async function restoreBadge() {
-  // Restore only the last successful count for this server and credential.
-  // A worker wake does not need an extra poll or an inactive cloud connection.
-  const epoch = generation, config = settings.selfhost;
-  if (settings.backendMode !== 'selfhost' || !config.serverUrl || !config.apiKey) return;
-  const identity = await selfhostIdentity(config);
-  const stored = await chrome.storage.local.get(['srCrawlState', 'selfhostBlocked']);
-  const count = stored.srCrawlState?.identity === identity ? stored.srCrawlState.processingCount : null;
-  if (epoch !== generation || stored.selfhostBlocked || !Number.isInteger(count) || count < 0) return;
-  await chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
-  await chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
-  if (epoch !== generation) await chrome.action.setBadgeText({ text: '' });
-}
 
 function cloudClient() {
   if (!configured) throw new Error('NOT_CONFIGURED');
@@ -86,7 +56,7 @@ function cloudClient() {
   client = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     global: { fetch: (url, options) => {
       // SDK refresh retries belong to the client that started them, even after
-      // a rapid selfhost -> cloud round trip. Old retries never send packets.
+      // an account change. Old retries never send packets.
       if (owner !== backendGeneration) throw new Error('STALE_SESSION');
       return cloudFetch(url, options);
     } },
@@ -97,7 +67,6 @@ function cloudClient() {
   return client;
 }
 async function cloudFetch(url, options = {}) {
-  if (settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
   const epoch = generation, controller = new AbortController();
   activeControllers.add(controller);
   const abort = () => controller.abort();
@@ -106,7 +75,7 @@ async function cloudFetch(url, options = {}) {
   const timeout = setTimeout(abort, 20_000);
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
-    if (epoch !== generation || settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
+    if (epoch !== generation) throw new Error('STALE_SESSION');
     return response;
   } finally { clearTimeout(timeout); activeControllers.delete(controller); options.signal?.removeEventListener('abort', abort); }
 }
@@ -130,12 +99,11 @@ function clearCache(notify = true, type = 'AUTH_CHANGED') {
 
 async function currentSession() {
   await ready;
-  if (settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
   if (!configured) throw new Error('NOT_CONFIGURED');
   const epoch = generation;
   const authClient = cloudClient();
   const { data, error } = await authClient.auth.getSession();
-  if (generation !== epoch || settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
+  if (generation !== epoch) throw new Error('STALE_SESSION');
   if (error) throw new Error('AUTH_REQUIRED');
   let session = data.session;
   if (!session) throw new Error('AUTH_REQUIRED');
@@ -146,41 +114,32 @@ async function currentSession() {
     if (refreshed.error || !refreshed.data.session) throw new Error('AUTH_REQUIRED');
     session = refreshed.data.session;
   }
-  if (generation !== epoch || settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
+  if (generation !== epoch) throw new Error('STALE_SESSION');
   return session;
 }
 
-// Identity changes (server/key, account) must invalidate the cache on their own, without
-// waiting for the TTL: cloud encodes the signed-in user straight from storage (no network).
+// An account change must invalidate the cache on its own, without waiting for the TTL:
+// the identity is read straight from storage (no network).
 async function statusIdentity() {
-  if (settings.backendMode === 'selfhost') return 'selfhost:' + await selfhostIdentity(settings.selfhost);
-  if (settings.backendMode === 'cloud') {
-    if (!configured) return 'cloud:unconfigured';
-    const stored = (await chrome.storage.local.get(AUTH_KEY))[AUTH_KEY];
-    return 'cloud:' + (sessionIdentity(stored) || 'anonymous');
-  }
-  return null;
+  if (!configured) return 'cloud:unconfigured';
+  const stored = (await chrome.storage.local.get(AUTH_KEY))[AUTH_KEY];
+  return 'cloud:' + (sessionIdentity(stored) || 'anonymous');
 }
 async function computeStatus() {
-  if (settings.backendMode === 'selfhost') {
-    try { const version = await selfhost('connection');
-      return { backendMode: 'selfhost', connected: true, version: version.version, error: null }; }
-    catch (error) { return { backendMode: 'selfhost', connected: false, version: null, error: error.message }; }
-  }
   try {
     const session = await currentSession();
-    return { backendMode: 'cloud', connected: true, signedIn: true, error: null,
+    return { connected: true, signedIn: true, error: null,
       name: typeof session.user.user_metadata?.full_name === 'string' ? session.user.user_metadata.full_name : null };
   } catch (error) {
-    return { backendMode: 'cloud', connected: false, signedIn: false, error: error.message === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : null };
+    return { connected: false, signedIn: false, error: error.message === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : null };
   }
 }
 function sameStatusResult(a, b) {
   if (!a || !b) return a === b;
-  return a.connected === b.connected && a.version === b.version && a.error === b.error &&
+  return a.connected === b.connected && a.error === b.error &&
     a.signedIn === b.signedIn && a.name === b.name;
 }
-// The actual live check (version probe / session read). Concurrent calls for the same
+// The actual live check (session read). Concurrent calls for the same
 // identity and generation share one flight; invalidated requests cannot be reused.
 function refreshStatus(identity) {
   const epoch = generation;
@@ -201,7 +160,6 @@ function refreshStatus(identity) {
 // value yet, the caller explicitly asks for one (manual refresh), or it is stale/failed.
 async function status(message = {}) {
   await ready;
-  if (!settings.backendMode) return { backendMode: null, connected: false, error: 'MODE_REQUIRED' };
   const identity = await statusIdentity();
   if (message.fresh) return refreshStatus(identity);
   const cached = statusCache?.identity === identity ? statusCache : null;
@@ -215,7 +173,6 @@ async function login() {
   if (loginFlight) return loginFlight;
   loginFlight = (async () => {
     await ready;
-    if (settings.backendMode !== 'cloud') throw new Error('MODE_UNSUPPORTED');
     const epoch = generation;
     if (!configured) throw new Error('NOT_CONFIGURED');
     const redirectTo = chrome.identity.getRedirectURL('supabase-auth');
@@ -237,15 +194,14 @@ async function login() {
       if (!code || !/^[A-Za-z0-9_-]{8,2048}$/.test(code)) throw new Error('LOGIN_CALLBACK_INVALID');
       const flow = (await chrome.storage.session.get('srAuthFlow')).srAuthFlow;
       if (!flow || flow.redirectTo !== redirectTo || flow.issuedAt !== issuedAt) throw new Error('LOGIN_CALLBACK_INVALID');
-      if (epoch !== generation || settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
+      if (epoch !== generation) throw new Error('STALE_SESSION');
       const exchanged = await cloudClient().auth.exchangeCodeForSession(code);
       if (exchanged.error || !exchanged.data.session) throw new Error('LOGIN_EXCHANGE_FAILED');
       const persisted = (await chrome.storage.local.get(AUTH_KEY))[AUTH_KEY];
       const savedSession = typeof persisted === 'string' ? JSON.parse(persisted) : persisted;
-      if (settings.backendMode !== 'cloud' || savedSession?.access_token !== exchanged.data.session.access_token) throw new Error('STALE_SESSION');
+      if (savedSession?.access_token !== exchanged.data.session.access_token) throw new Error('STALE_SESSION');
       clearCache();
       statusCache = null;
-      if (settings.backendMode !== 'cloud') throw new Error('STALE_SESSION');
       return status();
     } finally {
       await chrome.storage.session.remove('srAuthFlow');
@@ -256,7 +212,6 @@ async function login() {
 
 async function logout() {
   await ready;
-  if (settings.backendMode !== 'cloud') throw new Error('MODE_UNSUPPORTED');
   clearCache();
   statusCache = null;
   if (configured) {
@@ -276,8 +231,6 @@ async function logout() {
 async function reports(mode, message) {
   await ready;
   const epoch = generation;
-  if (settings.backendMode === 'selfhost') return selfhost(mode, message);
-  if (!settings.backendMode) throw new Error('MODE_REQUIRED');
   const { route, body } = buildRequest(mode, message);
   if (Date.now() < blockedUntil) throw new Error('RATE_LIMITED');
   const session = await currentSession();
@@ -290,7 +243,7 @@ async function reports(mode, message) {
   const controller = new AbortController();
   activeControllers.add(controller);
   const request = (async () => {
-    const send = token => { if (epoch !== generation || settings.backendMode !== 'cloud') throw new Error('STALE_SESSION'); return cloudFetch(`${SUPABASE_URL}/functions/v1/my-reports/${route}`, {
+    const send = token => { if (epoch !== generation) throw new Error('STALE_SESSION'); return cloudFetch(`${SUPABASE_URL}/functions/v1/my-reports/${route}`, {
       method: 'POST', cache: 'no-store', signal: controller.signal,
       headers: { apikey: PUBLISHABLE_KEY, Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -330,9 +283,7 @@ async function reports(mode, message) {
 }
 
 const ERROR_CODES = new Set(['NOT_CONFIGURED','CLOUD_SHORT_VEHICLE_UNSUPPORTED','AUTH_REQUIRED','ACCESS_DENIED','RATE_LIMITED','UNAVAILABLE','REQUEST_FAILED',
-  'DATASET_CHANGED','NUMBERS_LIMIT_EXCEEDED','INVALID_QUERY','STALE_SESSION','FORBIDDEN','UNKNOWN_MESSAGE','INVALID_MODE','MODE_UNSUPPORTED','MODE_REQUIRED',
-  'INVALID_SERVER_URL','INVALID_API_KEY','INVALID_POLL_INTERVAL','SERVER_NOT_CONFIGURED','SERVER_PERMISSION_REQUIRED','SERVER_AUTH_REQUIRED',
-  'SERVER_ACCESS_DENIED','SERVER_CONFLICT','SERVER_OFFLINE','SERVER_UPGRADE_REQUIRED','COMPAT_INFO_MISSING','CLIENT_UPGRADE_REQUIRED','CLIENT_PROTOCOL_UNSUPPORTED',
+  'DATASET_CHANGED','NUMBERS_LIMIT_EXCEEDED','INVALID_QUERY','STALE_SESSION','FORBIDDEN','UNKNOWN_MESSAGE',
   'LOGIN_START_FAILED','LOGIN_EXPIRED','LOGIN_CALLBACK_INVALID','LOGIN_EXCHANGE_FAILED']);
 const safeError = error => ERROR_CODES.has(error?.message) ? error.message : 'REQUEST_FAILED';
 function senderRole(sender) {
@@ -348,44 +299,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!role || !message || typeof message !== 'object') return false;
   (async () => {
     await ready;
-    await settingsFlight;
     const type = message.type;
     if (type === 'STATUS') return status(message);
     if (type === 'SEARCH') return reports('search', message);
     if (type === 'NUMBERS') return reports('numbers', message);
     if (role !== 'trusted') throw new Error('FORBIDDEN');
     if (type === 'SUMMARY') return reports('summary', message);
-    if (type === 'GET_SETTINGS') return { ...settings, configured };
-    if (type === 'SET_MODE') return changeSettings(message);
-    if (type === 'SAVE_SERVER') return changeSettings(message);
-    if (type === 'TEST_SERVER') {
-      const epoch = generation, config = settings.selfhost;
-      const assertCurrent = () => {
-        if (epoch !== generation || settings.backendMode !== 'selfhost' ||
-            config.serverUrl !== settings.selfhost.serverUrl || config.apiKey !== settings.selfhost.apiKey) throw new Error('STALE_SESSION');
-      };
-      const value = await selfhost('connection', message);
-      assertCurrent();
-      const active = message.serverUrl === undefined || (message.serverUrl === config.serverUrl && message.apiKey === config.apiKey);
-      if (active) {
-        await chrome.storage.local.remove('selfhostBlocked');
-        assertCurrent();
-        await resetAlarm();
-        assertCurrent();
-        const identity = 'selfhost:' + await selfhostIdentity(config);
-        assertCurrent();
-        // A successful explicit test already proves the active server: let STATUS reuse it
-        // instead of making the next popup open repeat the same check it just confirmed.
-        statusCache = { identity, result: { backendMode: 'selfhost', connected: true, version: value.version, error: null }, at: Date.now() };
-        await chrome.storage.local.set({ srStatusCache: statusCache });
-        assertCurrent();
-      }
-      return { ...value, active };
-    }
-    if (type === 'TEST_CLOUD') { if (settings.backendMode !== 'cloud') throw new Error('MODE_UNSUPPORTED'); return reports('summary', { fresh: true }).then(() => ({ connected: true })); }
-    if (type === 'OPEN_SERVER') { if (settings.backendMode !== 'selfhost') throw new Error('MODE_UNSUPPORTED'); await chrome.tabs.create({ url: serverOrigin(settings.selfhost.serverUrl) + '/' }); return { success: true }; }
-    if (type === 'CRAWL_STATUS') return selfhost('crawl-status');
-    if (type === 'CRAWL_START' || type === 'CRAWL_STOP') { await pollCrawlStatus(); const result = await selfhost(type === 'CRAWL_START' ? 'crawl-start' : 'crawl-stop'); await pollCrawlStatus(); return result; }
+    if (type === 'TEST_CLOUD') return reports('summary', { fresh: true }).then(() => ({ connected: true }));
     if (type === 'LOGIN') return login();
     if (type === 'LOGOUT') return logout();
     throw new Error('UNKNOWN_MESSAGE');
@@ -393,151 +313,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   return true;
 });
 
-async function resetAlarm(force = false) {
-  const blocked = (await chrome.storage.local.get('selfhostBlocked')).selfhostBlocked;
-  const minutes = Math.max(1, Number(settings.selfhost.pollInterval) || 5);
-  if (settings.backendMode === 'selfhost' && settings.selfhost.serverUrl && settings.selfhost.apiKey && !blocked) {
-    const alarm = await chrome.alarms.get(ALARM);
-    // Waking a worker must not postpone an existing periodic poll every time.
-    if (!force && alarm?.periodInMinutes === minutes) return;
-    await chrome.alarms.clear(ALARM);
-    await chrome.alarms.create(ALARM, { periodInMinutes: minutes });
-  } else await chrome.alarms.clear(ALARM);
-}
-async function changeSettings(message) {
-  // Serialize mutations and invalidate immediately, before any storage await.
-  if (message.type === 'SET_MODE' && !validMode(message.backendMode)) throw new Error('INVALID_MODE');
-  const selfhostConfig = message.type === 'SAVE_SERVER' ? validateSettings(message) : null;
-  if (selfhostConfig && !await chrome.permissions.contains({ origins: [selfhostConfig.serverUrl + '/*'] })) throw new Error('SERVER_PERMISSION_REQUIRED');
-  clearCache();
-  statusCache = null;
-  const operation = settingsFlight.then(async () => {
-    settings = { ...settings, ...(selfhostConfig ? { selfhost: selfhostConfig } : { backendMode: message.backendMode }) };
-    await chrome.storage.local.set(settings);
-    await chrome.storage.local.remove('selfhostBlocked');
-    if (await chrome.permissions.contains({ permissions: ['notifications'] })) {
-      const notifications = await chrome.notifications.getAll();
-      for (const id of Object.keys(notifications)) if (id.startsWith('sr-crawl-')) await chrome.notifications.clear(id);
-    }
-    await resetAlarm(true);
-    return { backendMode: settings.backendMode };
-  });
-  settingsFlight = operation.catch(() => {});
-  return operation;
-}
-async function selfhost(operation, message = {}) {
-  await ready;
-  if (settings.backendMode !== 'selfhost') throw new Error(settings.backendMode ? 'MODE_UNSUPPORTED' : 'MODE_REQUIRED');
-  const config = operation === 'connection' && message.serverUrl !== undefined ? validateSettings(message) : settings.selfhost, epoch = generation;
-  const isActiveConfig = config.serverUrl === settings.selfhost.serverUrl && config.apiKey === settings.selfhost.apiKey;
-  const key = JSON.stringify(['selfhost', config.serverUrl, operation, operation === 'search' || operation === 'numbers' ? buildRequest(operation, message).body : null]);
-  const canCache = operation === 'search' || operation === 'numbers' || operation === 'summary';
-  if (message.fresh) cache.delete(key);
-  const saved = cache.get(key);
-  if (canCache && saved && Date.now() - saved.at < CACHE_TTL) return saved.value;
-  if (operation !== 'connection' && operation !== 'version' && inflight.has(key)) return inflight.get(key);
-  const controller = new AbortController(); activeControllers.add(controller);
-  const timeout = setTimeout(() => controller.abort(new Error('REQUEST_TIMEOUT')), 20_000);
-  const promise = (async () => {
-    try {
-      const value = await selfhostRequest(config, operation, message, controller.signal);
-      if (epoch !== generation) throw new Error('STALE_SESSION');
-      if (canCache) {
-        cache.set(key, { at: Date.now(), value });
-        while (cache.size > 50) cache.delete(cache.keys().next().value);
-      }
-      return value;
-    } catch (error) {
-      if (epoch !== generation) throw new Error('STALE_SESSION');
-      if (isActiveConfig && ['CLIENT_UPGRADE_REQUIRED','CLIENT_PROTOCOL_UNSUPPORTED','SERVER_UPGRADE_REQUIRED','COMPAT_INFO_MISSING'].includes(error.message)) {
-        await chrome.storage.local.set({ selfhostBlocked: error.message });
-        await chrome.alarms.clear(ALARM);
-        // A background poll just learned the server is permanently incompatible: surface
-        // it immediately rather than leaving a stale "connected" status cached for minutes.
-        if (epoch === generation) {
-          statusCache = { identity: await statusIdentity(), result: { backendMode: 'selfhost', connected: false, version: null, error: error.message }, at: Date.now() };
-          await chrome.storage.local.set({ srStatusCache: statusCache });
-          chrome.runtime.sendMessage({ type: 'STATUS_CHANGED' }).catch(() => {});
-        }
-      }
-      throw error;
-    }
-  })().finally(() => { clearTimeout(timeout); if (inflight.get(key) === promise) inflight.delete(key); activeControllers.delete(controller); });
-  if (operation !== 'connection' && operation !== 'version') inflight.set(key, promise); return promise;
-}
-async function pollCrawlStatus() {
-  await ready; await settingsFlight;
-  if (settings.backendMode !== 'selfhost') return;
-  if (pollFlight) return pollFlight;
-  const epoch = generation, config = settings.selfhost;
-  pollFlight = (async () => {
-    try {
-      // Credential fingerprint namespaces persistent transitions without retaining keys in state.
-      const identity = await selfhostIdentity(config);
-      const previous = (await chrome.storage.local.get('srCrawlState')).srCrawlState;
-      const crawl = await selfhost('crawl-status');
-      if (epoch !== generation) return;
-      if (config.notifyCrawlDone &&
-          await chrome.permissions.contains({ permissions: ['notifications'] })) {
-        // /done/ext is a consumable completion record. Poll it independently
-        // of running transitions so a short crawl between alarms is not lost.
-        const done = await selfhost('crawl-done');
-        if (epoch !== generation) return;
-        if (done.done) {
-          const lines = done?.changes.slice(0, 3).map(row => row.notification_kind === 'duplicate'
-            ? [`[중복] ${{ group_added: '신규 중복군', members_changed: '멤버 변경', representative_changed: '대표건 변경' }[row.duplicate_change_type] || '중복 변경'}`, row.status_label,
-              row.member_count === null ? '' : `${row.member_count}건`, row.representative_report_number ? '대표 ' + row.representative_report_number : ''].filter(Boolean).join(' · ')
-            : [row.report_number ? `[${row.report_number}]` : '', row.report_title || '신고 변경'].filter(Boolean).join(' ')) || [];
-          if (done?.changes.length > 3) lines.push(`외 ${done.changes.length - 3}건`);
-          const duplicateCount = done?.changes.filter(row => row.notification_kind === 'duplicate').length || 0;
-          const reportCount = (done?.changes.length || 0) - duplicateCount;
-          const counts = duplicateCount ? ` (신고 ${reportCount}건, 중복 ${duplicateCount}건)` : done?.changed_count > 0 ? ` (${done.changed_count}건)` : '';
-          await chrome.notifications.create(`sr-crawl-done-${epoch}`, { type: 'basic', iconUrl: 'icons/icon48.png',
-            title: `크롤링 완료${counts}`,
-            message: lines.length ? lines.join('\n') : '서버 크롤링이 완료되었습니다.' });
-          if (epoch !== generation) { await chrome.notifications.clear(`sr-crawl-done-${epoch}`); return; }
-        }
-        if (previous?.identity === identity && !previous.running && crawl.running) {
-          await chrome.notifications.create(`sr-crawl-start-${epoch}`, { type: 'basic', iconUrl: 'icons/icon48.png',
-            title: '크롤링 시작', message: '서버에서 크롤링을 시작했습니다.' });
-          if (epoch !== generation) { await chrome.notifications.clear(`sr-crawl-start-${epoch}`); return; }
-        }
-      }
-      if (epoch !== generation) return;
-      await chrome.storage.local.set({ srCrawlState: { identity, running: crawl.running } });
-      const summary = await selfhost('summary', { fresh: true });
-      if (epoch !== generation) return;
-      const count = summary.stats.processingCount;
-      await chrome.storage.local.set({ srCrawlState: { identity, running: crawl.running,
-        ...(Number.isInteger(count) && count >= 0 ? { processingCount: count } : {}) } });
-      if (epoch !== generation) return;
-      await chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
-      await chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
-      if (epoch !== generation) await chrome.action.setBadgeText({ text: '' });
-    } catch {
-      if (epoch !== generation) return;
-      await chrome.action.setBadgeText({ text: '' });
-      const stored = (await chrome.storage.local.get('srCrawlState')).srCrawlState;
-      if (epoch === generation && stored) await chrome.storage.local.set({ srCrawlState: { ...stored, processingCount: null } });
-    }
-  })().finally(() => { pollFlight = null; });
-  return pollFlight;
-}
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) pollCrawlStatus(); });
-chrome.runtime.onInstalled.addListener(async () => { await ready; await resetAlarm(); });
-chrome.runtime.onStartup.addListener(async () => { await ready; await resetAlarm(); });
-// Direct trusted storage changes (account changes or restored settings) invalidate old data.
+// Direct trusted storage changes (account changes or restored sessions) invalidate old data.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !initialized) return;
   if (Object.entries(changes).some(([key, value]) => /^sb-.+-auth-token$/.test(key) &&
       sessionIdentity(value.oldValue) !== sessionIdentity(value.newValue))) { clearCache(); statusCache = null; }
-  const changedMode = changes.backendMode && changes.backendMode.newValue !== settings.backendMode;
-  const changedServer = changes.selfhost && JSON.stringify(changes.selfhost.newValue) !== JSON.stringify(settings.selfhost);
-  if (changedMode || changedServer) {
-    clearCache();
-    statusCache = null;
-    settings = { ...settings, ...(changedMode ? { backendMode: validMode(changes.backendMode.newValue) ? changes.backendMode.newValue : null } : {}),
-      ...(changedServer ? { selfhost: changes.selfhost.newValue || {} } : {}) };
-    settingsFlight = settingsFlight.then(async () => { if (changedServer) await chrome.storage.local.remove('selfhostBlocked'); await resetAlarm(true); }).catch(() => {});
-  }
 });
