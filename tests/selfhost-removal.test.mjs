@@ -76,10 +76,14 @@ for (const area of ['sync', 'local']) {
       seedAlarms: ['safetyreport_poll'], granted: { origins: PC_ORIGINS, permissions: [] },
       failStorageRemove: (where, keys) => broken && where === area && Array.isArray(keys) && keys.includes(area === 'sync' ? 'apiKey' : 'selfhost') });
     assert.equal(first.stores.local.srMigration, undefined, 'not recorded until the last step');
+    const trace = first.stores.local.srMigrationError;
+    assert.equal(trace.step, area); assert.equal(trace.attempts, 1); assert.equal(trace.code, 'Error');
+    assert.doesNotMatch(JSON.stringify(trace), /private|storage failure/, 'no message or secret in the trace');
+    if (area === 'sync') for (const key of ['selfhost', 'apiKey', 'serverUrl']) assert.equal(first.stores.local[key], undefined, 'PC secrets in local go before sync is touched');
     assert.equal((await first.send({ type: 'STATUS' })).signedIn, true, 'cloud starts even though the migration did not finish');
     broken = false;
     const second = await worker({ local: first.stores.local, sync: first.stores.sync, legacy: true });
-    assert.equal(second.stores.local.srMigration, 1);
+    assert.equal(second.stores.local.srMigration, 1); assert.equal(second.stores.local.srMigrationError, undefined, 'the trace is cleared on success');
     for (const key of legacyKeys) assert.equal(second.stores.local[key], undefined, key);
     assert.equal(second.stores.sync.apiKey, undefined); assert.equal(second.stores.sync.theme, 'dark');
     assert.deepEqual(second.stores.local[authKey], kept); assert.deepEqual(second.stores.local.other, { keep: true });
@@ -108,4 +112,12 @@ test('source manifest: only the minimal permissions remain', () => {
   const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
   assert.deepEqual(manifest.permissions, ['storage', 'identity', 'clipboardWrite']);
   for (const key of ['optional_permissions', 'optional_host_permissions', 'host_permissions']) assert.equal(manifest[key], undefined, key);
+});
+test('migration: repeated failures increase the attempt count in the trace', async () => {
+  let broken = true;
+  const opts = { local: { selfhost: config }, sync: config, failStorageRemove: (where, keys) => broken && where === 'sync' && Array.isArray(keys) };
+  const first = await worker(opts);
+  const second = await worker({ ...opts, local: first.stores.local, sync: first.stores.sync });
+  assert.equal(second.stores.local.srMigrationError.attempts, 2);
+  assert.equal(second.stores.local.srMigrationError.step, 'sync');
 });

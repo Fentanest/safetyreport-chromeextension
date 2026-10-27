@@ -28,7 +28,9 @@ await writeFile(join(extension,'manifest.json'),JSON.stringify(manifest));
 let context;
 const launch=async profile=>{
   const result=await chromium.launchPersistentContext(profile,{executablePath:executable,headless:true,args:['--no-sandbox',`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
-  let worker=result.serviceWorkers()[0];if(!worker)worker=await result.waitForEvent('serviceworker');
+  // Subscribe before looking: a worker registered in between would otherwise be missed.
+  const registered=result.waitForEvent('serviceworker');registered.catch(()=>{});
+  const worker=result.serviceWorkers()[0]||await registered;
   return {context:result,id:new URL(worker.url()).host};
 };
 const status=page=>page.evaluate(()=>new Promise(resolve=>chrome.runtime.sendMessage({type:'STATUS'},resolve)));
@@ -57,20 +59,35 @@ try{
     // First launch = a fresh 1.3.0 install; then rewind its storage to what 1.2.6 left and restart the browser.
     let launched=await launch(profile);context=launched.context;
     let options=await context.newPage();await options.goto(`chrome-extension://${launched.id}/options.html`);
-    await options.evaluate(async({legacy,scenario,authKey,session,origin})=>{
-      await chrome.storage.local.remove('srMigration');
-      if(!scenario.onlyCloud)await chrome.storage.local.set(legacy);
-      else await chrome.storage.local.set({backendMode:'cloud',backendMigration:1});
-      await chrome.storage.sync.set({theme:'dark',...(scenario.onlyCloud?{}:{serverUrl:origin,apiKey:'browser-mock-key',backendMode:'selfhost',pollInterval:5})});
-      if(scenario.cloud)await chrome.storage.local.set({[authKey]:session});
-      await chrome.alarms?.create?.('safetyreport_poll',{periodInMinutes:5});
+    // The first worker's own migration must be recorded before the storage is rewound to 1.2.6.
+    await options.waitForFunction(async()=>(await chrome.storage.local.get('srMigration')).srMigration===1);
+    // A late write from the first worker (storage IPC can land after our observation) may put the version back,
+    // so rewind until it stays gone for two consecutive reads, then restart the browser.
+    const seeded=await options.evaluate(async({legacy,scenario,authKey,session,origin})=>{
+      const rewind=async()=>{
+        await chrome.storage.local.remove('srMigration');
+        if(!scenario.onlyCloud)await chrome.storage.local.set(legacy);
+        else await chrome.storage.local.set({backendMode:'cloud',backendMigration:1});
+        await chrome.storage.sync.set({theme:'dark',...(scenario.onlyCloud?{}:{serverUrl:origin,apiKey:'browser-mock-key',backendMode:'selfhost',pollInterval:5})});
+        if(scenario.cloud)await chrome.storage.local.set({[authKey]:session});
+        await chrome.alarms?.create?.('safetyreport_poll',{periodInMinutes:5});
+      };
+      let quiet=0;
+      for(let i=0;i<20&&quiet<2;i++){
+        await rewind();await new Promise(r=>setTimeout(r,400));
+        quiet=(await chrome.storage.local.get('srMigration')).srMigration===undefined?quiet+1:0;
+      }
+      if(quiet<2)throw new Error('could not rewind srMigration');
+      return Object.keys(await chrome.storage.local.get(null));
     },{legacy,scenario,authKey,session,origin});
     await context.close();context=null;
     launched=await launch(profile);context=launched.context;
     options=await context.newPage();await options.goto(`chrome-extension://${launched.id}/options.html`);
+    // The recorded version is the migration's own completion signal; a migration that never finishes fails here.
+    await options.waitForFunction(async()=>(await chrome.storage.local.get('srMigration')).srMigration===1,null,{timeout:15000});
     await options.waitForFunction(()=>document.getElementById('status').textContent!=='계정 확인 중…');
     const state=await options.evaluate(async()=>({local:await chrome.storage.local.get(null),sync:await chrome.storage.sync.get(null),alarms:typeof chrome.alarms,notifications:typeof chrome.notifications,manifest:chrome.runtime.getManifest()}));
-    for(const key of legacyKeys)assert.equal(state.local[key],undefined,`${name}: local.${key}`);
+    for(const key of legacyKeys)assert.equal(state.local[key],undefined,`${name}: local.${key} ${JSON.stringify({seeded,m:state.local.srMigration,e:state.local.srMigrationError,keys:Object.keys(state.local)})}`);
     for(const key of ['serverUrl','apiKey','backendMode','pollInterval'])assert.equal(state.sync[key],undefined,`${name}: sync.${key}`);
     assert.equal(state.sync.theme,'dark');assert.equal(state.local.srMigration,1);
     assert.equal(state.alarms,'undefined');assert.equal(state.notifications,'undefined');

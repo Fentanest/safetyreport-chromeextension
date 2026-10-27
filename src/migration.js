@@ -22,19 +22,37 @@ async function dropGrantedPermissions(api) {
   if ((granted.permissions || []).includes('notifications')) await attempt(() => api.permissions.remove({ permissions: ['notifications'] }));
 }
 
+// A failed run leaves a short trace (step, error name, time, count) so a bug report can show it; never a message or value.
+export const ERROR_KEY = 'srMigrationError';
+async function recordFailure(api, step, error, previous) {
+  const trace = { step, code: String(error?.name || 'Error').slice(0, 40), at: Date.now(), attempts: (previous?.attempts || 0) + 1 };
+  await attempt(() => api.storage.local.set({ [ERROR_KEY]: trace }));
+}
+
 export async function migrateFromSelfhost(api) {
-  const stored = await api.storage.local.get([MIGRATION_KEY, 'srStatusCache']);
+  const stored = await api.storage.local.get([MIGRATION_KEY, ERROR_KEY, 'srStatusCache']);
   if (stored[MIGRATION_KEY] >= MIGRATION_VERSION) return false;
-  if (api.alarms?.clear) await attempt(() => api.alarms.clear(ALARM));
-  if (api.notifications?.getAll && api.notifications.clear) await attempt(async () => {
-    for (const id of Object.keys(await api.notifications.getAll())) if (id.startsWith(NOTICE_PREFIX)) await api.notifications.clear(id);
-  });
-  await attempt(() => api.action.setBadgeText({ text: '' }));
-  await dropGrantedPermissions(api);
-  await api.storage.sync.remove(SYNC_KEYS);
-  // The status cache is shared: only an entry that describes a selfhost server is stale.
-  const stale = String(stored.srStatusCache?.identity ?? '').startsWith('cloud:') ? [] : ['srStatusCache'];
-  await api.storage.local.remove([...LOCAL_KEYS, ...stale]);
-  await api.storage.local.set({ [MIGRATION_KEY]: MIGRATION_VERSION });
+  let step = 'start';
+  try {
+    if (api.alarms?.clear) await attempt(() => api.alarms.clear(ALARM));
+    if (api.notifications?.getAll && api.notifications.clear) await attempt(async () => {
+      for (const id of Object.keys(await api.notifications.getAll())) if (id.startsWith(NOTICE_PREFIX)) await api.notifications.clear(id);
+    });
+    await attempt(() => api.action.setBadgeText({ text: '' }));
+    await dropGrantedPermissions(api);
+    // The PC API key lives in local: delete it first so a later sync failure cannot leave it behind.
+    step = 'local';
+    // The status cache is shared: only an entry that describes a selfhost server is stale.
+    const stale = String(stored.srStatusCache?.identity ?? '').startsWith('cloud:') ? [] : ['srStatusCache'];
+    await api.storage.local.remove([...LOCAL_KEYS, ...stale]);
+    step = 'sync';
+    await api.storage.sync.remove(SYNC_KEYS);
+    step = 'record';
+    await api.storage.local.set({ [MIGRATION_KEY]: MIGRATION_VERSION });
+    await api.storage.local.remove(ERROR_KEY);
+  } catch (error) {
+    await recordFailure(api, step, error, stored[ERROR_KEY]);
+    throw error;
+  }
   return true;
 }
