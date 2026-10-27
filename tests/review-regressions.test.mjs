@@ -76,155 +76,59 @@ test('panels: hash navigation preserves unchanged address results; dismissed add
   await page.waitForFunction(() => document.getElementById('sr-address-panel-host').shadowRoot.querySelector('.sr-plain-count').textContent === '99건');
   assert.equal(await page.evaluate(() => window.__calls.length), 2);
 }));
-async function options(page, backendMode = 'selfhost') {
-  await page.addInitScript(({ backendMode }) => {
-    window.__settings = { backendMode, selfhost: { serverUrl: 'http://localhost:6819', apiKey: 'test-only-key', notifyCrawlDone: false, pollInterval: 5 } };
-    window.__calls = []; window.__runtime = []; window.__storage = []; window.__tests = [];
-    window.__signedIn = false; window.__failure = false; window.__holdPermission = false;
+async function options(page) {
+  await page.addInitScript(() => {
+    window.__calls = []; window.__runtime = []; window.__storage = [];
+    window.__signedIn = false;
     window.__broadcast = () => window.__runtime.forEach(fn => fn({ type: 'AUTH_CHANGED' }));
     chrome.storage = { sync: { get(_key, cb) { cb({ theme: 'light' }); }, set: async () => {} }, onChanged: { addListener(fn) { window.__storage.push(fn); } } };
-    chrome.permissions = { request(_request, cb) { if (window.__holdPermission) window.__permission = cb; else cb(true); } };
     chrome.runtime = { lastError: null, onMessage: { addListener(fn) { window.__runtime.push(fn); } }, sendMessage(message, callback) {
       window.__calls.push(message.type);
-      if (message.type === 'GET_SETTINGS') {
-        if (window.__holdSettingsOnce) { window.__holdSettingsOnce = false; window.__settingsReply = () => callback({ data: structuredClone(window.__settings) }); }
-        else callback({ data: structuredClone(window.__settings) });
-      }
-      if (message.type === 'STATUS') callback({ data: { backendMode: window.__settings.backendMode, signedIn: window.__signedIn, connected: !window.__failure, error: window.__failure ? 'SERVER_OFFLINE' : null, version: '3.0.0.0' } });
-      if (message.type === 'SET_MODE') { window.__settings.backendMode = message.backendMode; window.__broadcast(); callback({ data: {} }); }
-      if (message.type === 'SAVE_SERVER') {
-        const { type, ...config } = message; window.__settings.selfhost = config;
-        window.__broadcast(); callback({ data: {} });
-      }
-      if (message.type === 'TEST_SERVER') window.__tests.push(() => callback({ data: { version: '3.0.0.0', active: true } }));
+      if (message.type === 'STATUS') callback({ data: { connected: window.__signedIn, signedIn: window.__signedIn, error: null } });
       if (message.type === 'LOGIN' || message.type === 'LOGOUT') callback({ error: 'REQUEST_FAILED' });
       if (message.type === 'TEST_CLOUD') window.__cloudTest = () => callback({ data: { connected: true } });
     } };
-  }, { backendMode });
-  await page.goto(url('options.html')); await page.waitForFunction(expected => document.getElementById('backendMode').value === expected, backendMode);
-  await page.waitForFunction(() => !document.getElementById('serverStatus').textContent.includes('중…'));
+  });
+  await page.goto(url('options.html'));
+  await page.waitForFunction(() => document.getElementById('status').textContent === '로그인하지 않았습니다.');
 }
+test('options: only the cloud account is configurable; the PC notice explains where PC-only reports went', async () => withPage(async page => {
+  await options(page);
+  for (const id of ['backendMode', 'selfhostSettings', 'serverUrl', 'apiKey', 'btnSave', 'btnTest', 'modeBadge']) assert.equal(await page.locator('#' + id).count(), 0, id);
+  assert.equal(await page.locator('#cloudSettings').isVisible(), true);
+  assert.ok((await page.locator('#pcNotice').textContent()).includes('PC에만 있던 신고는 모바일 앱에서 가져와'));
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['STATUS']);
+}));
 for (const notification of ['runtime', 'storage']) {
-  test(`options: ${notification} status updates reflect disconnect/recovery and preserve server test results`, async () => withPage(async page => {
+  test(`options: ${notification} status updates preserve pending and completed cloud connection tests`, async () => withPage(async page => {
     await options(page);
-    await page.locator('#serverUrl').fill('http://localhost:9999');
-    await page.locator('#btnTest').click();
-    await page.waitForFunction(() => window.__tests.length === 1);
-    const update = failure => page.evaluate(({ failure, notification }) => {
-      window.__failure = failure;
+    const update = signedIn => page.evaluate(({ signedIn, notification }) => {
+      window.__signedIn = signedIn;
       if (notification === 'runtime') window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
       else window.__storage.forEach(fn => fn({ srStatusCache: { newValue: {} } }, 'local'));
-    }, { failure, notification });
+    }, { signedIn, notification });
+    await page.locator('#testCloud').click();
+    await page.waitForFunction(() => typeof window.__cloudTest === 'function');
     await update(true);
-    await page.waitForFunction(() => document.getElementById('statusDot').className.includes('--bad'), null, { timeout: 2000 });
-    assert.ok((await page.locator('#serverStatus').textContent()).includes('연결할 수 없습니다'));
-    assert.ok((await page.locator('#testResult').textContent()).includes('테스트 중'));
-    assert.equal(await page.locator('#btnTest').isDisabled(), true);
-    await page.evaluate(() => window.__tests.shift()());
-    await page.waitForFunction(() => document.getElementById('testResult').textContent.includes('입력값 연결 성공'));
-    const result = await page.locator('#testResult').textContent();
+    await page.waitForFunction(() => document.getElementById('headerStatus').textContent === '클라우드 · 로그인됨', null, { timeout: 2000 });
+    assert.equal(await page.locator('#testCloud').isDisabled(), true);
+    await page.evaluate(() => window.__cloudTest());
+    await page.waitForFunction(() => document.getElementById('cloudTestResult').textContent === '클라우드 조회 연결 성공');
     await update(false);
-    await page.waitForFunction(() => document.getElementById('statusDot').className.includes('--ok'), null, { timeout: 2000 });
-    assert.ok((await page.locator('#serverStatus').textContent()).includes('연결됨'));
-    assert.equal(await page.locator('#testResult').textContent(), result);
-    assert.equal(await page.locator('#serverUrl').inputValue(), 'http://localhost:9999');
+    await page.waitForFunction(() => document.getElementById('headerStatus').textContent === '클라우드 · 로그인 필요', null, { timeout: 2000 });
+    assert.equal(await page.locator('#cloudTestResult').textContent(), '클라우드 조회 연결 성공');
   }));
 }
-test('options: STATUS_CHANGED preserves pending and completed cloud connection tests', async () => withPage(async page => {
-  await options(page, 'cloud');
-  await page.locator('#testCloud').click();
-  await page.waitForFunction(() => typeof window.__cloudTest === 'function');
-  await page.evaluate(() => {
-    window.__signedIn = true;
-    window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
-  });
-  await page.waitForFunction(() => document.getElementById('headerStatus').textContent === '클라우드 · 로그인됨', null, { timeout: 2000 });
-  assert.equal(await page.locator('#testCloud').isDisabled(), true);
-  await page.evaluate(() => window.__cloudTest());
-  await page.waitForFunction(() => document.getElementById('cloudTestResult').textContent === '클라우드 조회 연결 성공');
-  await page.evaluate(() => {
-    window.__signedIn = false;
-    window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
-  });
-  await page.waitForFunction(() => document.getElementById('headerStatus').textContent === '클라우드 · 로그인 필요', null, { timeout: 2000 });
-  assert.equal(await page.locator('#cloudTestResult').textContent(), '클라우드 조회 연결 성공');
-}));
-test('options: a status update during a pending settings load still fills the saved server', async () => withPage(async page => {
-  await options(page);
-  await page.evaluate(() => {
-    window.__settings.selfhost.serverUrl = 'http://localhost:9999';
-    window.__holdSettingsOnce = true;
-    window.__broadcast();
-  });
-  await page.waitForFunction(() => typeof window.__settingsReply === 'function');
-  await page.evaluate(() => {
-    window.__runtime.forEach(fn => fn({ type: 'STATUS_CHANGED' }));
-    window.__settingsReply();
-  });
-  await page.waitForFunction(() => document.getElementById('serverUrl').value === 'http://localhost:9999', null, { timeout: 2000 });
-}));
-test('options: active mode cannot become blank; runtime/storage changes synchronize and preserve edits', async () => withPage(async page => {
-  await options(page);
-  assert.equal(await page.locator('#backendMode option[value=""]').isDisabled(), true);
-  await page.evaluate(() => { const mode = document.getElementById('backendMode'); mode.value = ''; mode.dispatchEvent(new Event('change')); });
-  assert.equal(await page.locator('#backendMode').inputValue(), 'selfhost');
-  await page.locator('#serverUrl').fill('http://localhost:9999');
-  await page.evaluate(() => { window.__settings.backendMode = 'cloud'; window.__broadcast(); });
-  await page.waitForFunction(() => document.getElementById('backendMode').value === 'cloud');
-  assert.equal(await page.locator('#selfhostSettings').isVisible(), false);
-  await page.evaluate(() => { window.__settings.backendMode = 'selfhost'; window.__storage.forEach(fn => fn({ backendMode: {} }, 'local')); });
-  await page.waitForFunction(() => document.getElementById('backendMode').value === 'selfhost');
-  assert.equal(await page.locator('#serverUrl').inputValue(), 'http://localhost:9999');
-}));
-test('options: edits, mode round trips and delayed permission discard stale test results', async () => withPage(async page => {
-  await options(page); await page.locator('#btnTest').click(); await page.waitForFunction(() => window.__tests.length === 1);
-  await page.locator('#serverUrl').fill('http://localhost:9999'); await page.evaluate(() => window.__tests.shift()());
-  assert.equal(await page.locator('#testResult').textContent(), '');
-  assert.ok(!(await page.locator('#serverStatus').textContent()).includes('9999'));
-  await page.locator('#btnTest').click(); await page.waitForFunction(() => window.__tests.length === 1);
-  await page.locator('#apiKey').fill('another-test-key'); await page.evaluate(() => window.__tests.shift()());
-  assert.equal(await page.locator('#testResult').textContent(), '');
-  await page.locator('#btnTest').click(); await page.waitForFunction(() => window.__tests.length === 1);
-  await page.locator('#backendMode').selectOption('cloud'); await page.waitForFunction(() => document.getElementById('backendMode').value === 'cloud' && !document.getElementById('backendMode').disabled);
-  await page.locator('#backendMode').selectOption('selfhost'); await page.waitForFunction(() => document.getElementById('backendMode').value === 'selfhost');
-  await page.evaluate(() => window.__tests.shift()()); assert.equal(await page.locator('#testResult').textContent(), '');
-  await page.evaluate(() => { window.__holdPermission = true; }); await page.locator('#btnTest').click();
-  await page.waitForFunction(() => typeof window.__permission === 'function');
-  await page.locator('#serverUrl').fill('http://localhost:8888'); await page.evaluate(() => window.__permission(true));
-  assert.equal(await page.evaluate(() => window.__tests.length), 0);
-  assert.equal(await page.locator('#testResult').textContent(), '');
-}));
-test('options: saving an offline server keeps save success separate from connection failure', async () => withPage(async page => {
-  await options(page); await page.locator('#serverUrl').fill('http://localhost:9999/'); await page.locator('#apiKey').fill('  test-only-key  '); await page.evaluate(() => { window.__failure = true; });
-  await page.locator('#btnSave').click(); await page.waitForFunction(() => document.getElementById('saveResult').textContent === '저장되었습니다.');
-  await page.waitForFunction(() => document.getElementById('serverStatus').textContent.includes('연결할 수 없습니다'));
-  assert.equal(await page.locator('#testResult').textContent(), '');
-  assert.equal(await page.locator('#serverUrl').inputValue(), 'http://localhost:9999');
-  assert.equal(await page.locator('#apiKey').inputValue(), 'test-only-key');
-}));
-test('options: a rapid external mode round trip invalidates a pending test even when refresh sees the same mode', async () => withPage(async page => {
-  await options(page); await page.locator('#btnTest').click(); await page.waitForFunction(() => window.__tests.length === 1);
-  await page.evaluate(() => {
-    window.__settings.backendMode = 'cloud'; window.__broadcast();
-    window.__settings.backendMode = 'selfhost'; window.__broadcast();
-    window.__tests.shift()();
-  });
-  await page.waitForFunction(() => document.getElementById('backendMode').value === 'selfhost' && !document.getElementById('btnTest').disabled);
-  assert.equal(await page.locator('#testResult').textContent(), '');
-}));
-test('options: login/logout failure survives refresh; obsolete cloud test cannot update a new mode', async () => withPage(async page => {
-  await options(page, 'cloud'); await page.locator('#login').click();
+test('options: login/logout failure survives refresh', async () => withPage(async page => {
+  await options(page); await page.locator('#login').click();
   await page.waitForFunction(() => document.getElementById('authError').textContent.includes('로그인하지 못했습니다'));
   await page.waitForFunction(() => document.getElementById('status').textContent === '로그인하지 않았습니다.');
   assert.ok((await page.locator('#authError').textContent()).includes('로그인하지 못했습니다'));
   await page.evaluate(() => { window.__signedIn = true; window.__broadcast(); }); await page.locator('#logout').waitFor({ state: 'visible' });
   await page.locator('#logout').click(); await page.waitForFunction(() => document.getElementById('authError').textContent.includes('로그아웃하지 못했습니다'));
-  await page.locator('#testCloud').click(); await page.waitForFunction(() => typeof window.__cloudTest === 'function');
-  await page.locator('#backendMode').selectOption('selfhost'); await page.waitForFunction(() => document.getElementById('backendMode').value === 'selfhost');
-  await page.evaluate(() => window.__cloudTest()); assert.equal(await page.locator('#cloudTestResult').textContent(), '');
 }));
 test('options: same-account token rotation keeps a cloud test; an account change invalidates it', async () => withPage(async page => {
-  await options(page, 'cloud'); await page.locator('#testCloud').click(); await page.waitForFunction(() => typeof window.__cloudTest === 'function');
+  await options(page); await page.locator('#testCloud').click(); await page.waitForFunction(() => typeof window.__cloudTest === 'function');
   await page.evaluate(() => {
     window.__storage.forEach(fn => fn({ 'sb-test-auth-token': {
       oldValue: JSON.stringify({ user: { id: 'a' }, access_token: 'old-mock-token' }),
@@ -240,23 +144,13 @@ test('options: same-account token rotation keeps a cloud test; an account change
   });
   assert.equal(await page.locator('#cloudTestResult').textContent(), '');
 }));
-test('popup: selfhost crawl controls precede 200 recent reports and stay visible in both themes', async () => withPage(async page => {
+test('popup: a signed-out account sees the login prompt and no crawl or server controls', async () => withPage(async page => {
   await page.addInitScript(() => {
-    const row = { report_number: 'TEST-1', vehicle_number: '12가3456', status: 'accepted' };
     chrome.storage = { sync: { get(_key, cb) { cb({ theme: 'light' }); } }, onChanged: { addListener() {} } };
     chrome.runtime = { lastError: null, onMessage: { addListener() {} }, sendMessage(message, cb) {
-      const data = message.type === 'STATUS' ? { backendMode: 'selfhost', connected: true, version: '3.0.0.0' }
-        : message.type === 'CRAWL_STATUS' ? { running: false }
-        : { backend: 'selfhost', stats: { total: 200, processingCount: 1 }, recent: Array.from({ length: 200 }, () => row), recent_limit: 200 };
-      cb({ data });
+      cb({ data: message.type === 'STATUS' ? { connected: false, signedIn: false, error: null } : {} });
     } };
   });
-  await page.goto(url('popup.html')); await page.locator('#crawlStart').waitFor();
-  assert.equal(await page.locator('.sr-record').count(), 200);
-  for (const theme of ['light', 'dark']) {
-    await page.evaluate(value => { document.documentElement.dataset.srTheme = value; }, theme);
-    const button = await page.locator('#crawlStart').boundingBox();
-    assert.ok(button && button.y >= 0 && button.y + button.height < 570);
-    assert.ok(button.y < (await page.locator('.sr-record').first().boundingBox()).y);
-  }
+  await page.goto(url('popup.html')); await page.locator('#login').waitFor();
+  for (const id of ['crawlStart', 'crawlStop', 'serverHome', 'modeBadge']) assert.equal(await page.locator('#' + id).count(), 0, id);
 }, { width: 460, height: 570 }));

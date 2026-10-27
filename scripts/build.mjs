@@ -6,7 +6,7 @@ import { readVersion } from './version.mjs';
 const version = await readVersion();
 const url = (process.env.SR_SUPABASE_URL || '').replace(/\/+$/, '');
 const key = process.env.SR_SUPABASE_PUBLISHABLE_KEY || '';
-// 커뮤니티 서버는 클라우드(*.supabase.co)나 셀프호스트(예: https://supabase.worklazy.net)다 — 경로 없는 https 주소만 받는다.
+// 커뮤니티 서버(예: *.supabase.co, https://supabase.worklazy.net)는 경로 없는 https 주소만 받는다.
 if ((url || key) && (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?$/.test(url) || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(key))) {
   throw new Error('Set both SR_SUPABASE_URL (https origin, no path) and SR_SUPABASE_PUBLISHABLE_KEY to the community server public values.');
 }
@@ -17,8 +17,10 @@ await mkdir(resolve(out, 'assets'), { recursive: true });
 const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
 manifest.version = version;
 manifest.host_permissions = url ? [`${url}/*`] : [];
-manifest.description = '개인 safetyreport 서버 또는 클라우드에서 내 신고 조회';
-manifest.permissions = ['storage', 'identity', 'clipboardWrite', 'alarms'];
+// 셀프호스트(PC) 경로가 없으므로 alarms·알림·임의 서버 host 권한을 만들지 않는다(1.3.0).
+manifest.permissions = ['storage', 'identity', 'clipboardWrite'];
+delete manifest.optional_permissions;
+delete manifest.optional_host_permissions;
 manifest.background = { service_worker: 'background.js', type: 'module' };
 await writeFile(resolve(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 for (const file of ['popup.html','popup.css','popup.js','options.html','options.css','options.js',
