@@ -14,6 +14,15 @@
 
 # Changelog
 
+## 2026-10-27 — 1.3.0: 셀프호스트(PC 앱) 삭제, 클라우드 전용
+
+- 셀프호스트 클라이언트·호환성 검사·크롤링 폴링·시작/완료 알림·처리중 배지, 옵션의 모드 선택·서버 주소·API 키, 팝업 크롤링 조작, 셀프호스트 전용 표시(서버 상세 링크·서버 대시보드), `contracts/selfhost-compat`와 관련 시험을 삭제했다. PC 앱은 서비스 종료.
+- 권한: `alarms`, optional `notifications`, optional host(`http://*/*`, `https://*/*`)를 manifest와 `scripts/build.mjs`(alarms를 다시 쓰던 부분 포함)에서 뺐다. 최종 권한은 `storage`·`identity`·`clipboardWrite`와 빌드한 Supabase origin, 안전신문고 content script. `tests/release-build.test.mjs`가 ZIP의 manifest로 확인한다.
+- 이전: worker 최초 초기화에서 `src/migration.js`가 버전 있는 migration(`srMigration`)을 실행한다. PC 요청은 만들지 않고, alarm·크롤링 알림·배지를 정리하며(API가 있을 때만, 실패 무시), 받아 둔 PC 서버·알림 권한을 반납하고, 셀프호스트 저장 키(`local.selfhost`·legacy `serverUrl`/`apiKey`/`notifyCrawlDone`/`pollInterval`·`srCrawlState`·`selfhostBlocked`·`wasCrawling`·`backendMode`·`backendMigration`, sync의 같은 키)만 지운다. `storage.clear()`는 쓰지 않는다. 모든 단계가 재실행 가능하고 마지막에 버전을 기록한다. 클라우드 세션은 보존하며 로그인은 사용자가 직접 한다.
+- 메시지·상태: `SET_MODE`·`SAVE_SERVER`·`TEST_SERVER`·`GET_SETTINGS`·`OPEN_SERVER`·`CRAWL_*`를 없앴다. `STATUS` 결과에서 `backendMode`·`version`이 사라지고, `srStatusCache`는 `cloud:` identity만 복원한다.
+- 옵션 화면에 "PC에만 있던 신고는 모바일 앱에서 가져와 공유해야 보인다"는 안내를 넣었다.
+- 시험: 클라우드 worker 시험으로 `tests/backend-worker.test.mjs`를 정리하고 `tests/selfhost-removal.test.mjs`를 추가했다(1.2.6 네 상황별 PC 요청 0회·정리·세션 보존, 재실행, 중간 실패 후 재개, API 없는 환경, 권한 반납 실패). `scripts/check-backend-browser.mjs`는 같은 네 상황을 실제 Chromium·서비스 워커로 업데이트 시나리오 검증하도록 바꿨다.
+
 ## 2026-10-13 — 1.2.4: 차량 부분 번호 검색·신고 내역 창 자동 열림 개선
 
 ### 2026-10-13 — 차량 4글자·주소 자동 열림 복구 (astra/auto-open, 버전 변경 없음)
