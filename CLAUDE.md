@@ -27,3 +27,37 @@
 - AI 내부 검토 번호에 이슈 종료/해결 키워드를 붙이지 않는다.
 - 코드 주석, 테스트 설명, Markdown 문서, 커밋 메시지, PR 제목·본문·댓글, 이슈 댓글, 변경 이력, 릴리스 노트, 자동 생성 보고서와 그 템플릿 모두에 적용한다.
 - Markdown 제목·색상값·정규식 등 이슈 참조와 무관한 정상 문법은 무차별 치환하지 않는다.
+
+## 에이전트 배정 (safetyreport 계열 정본의 사본)
+
+> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정).
+
+| 역할 | Herdr World 프로필 (기존 것을 그대로 쓴다) | 실행 | 모델 |
+|---|---|---|---|
+| 총괄·지휘·최종 판정 | Orchestrator | Claude Code | Opus |
+| **구현 1순위 (Muse)** | Builder(opencode) | **OpenCode** | `opencode-go/muse-spark-1.3-contributor` (OpenCode 기본 모델) |
+| 구현 병렬, 계약·데이터·보안·CI·통합 (Sol) | Builder(sol) | Codex | `gpt-6.1-sol` |
+| **검수 (Astra)**: 계획 기술검토·반박, 고정 커밋 정식 검수 | Reviewer(astra) | Codex | `gpt-6-astra` |
+| **웹 검색·조사·리서치 (Gemini)** | Web Researcher | agy | `gemini-4-argon-high` (agy 기본 모델) |
+| 조사 대체 (Terra, **Gemini가 한도에 걸렸을 때만**) | Code Analyst | Codex | `gpt-6.1-terra` |
+
+### 띄우는 규칙
+- **World 프로필은 다른 프로젝트와 같이 쓴다. 고치지도, 새로 만들지도 않는다.** 이 배정표가 프로필에 맞춘다
+- 모든 작업자는 **Herdr World 프로필로 띄워 World에 반드시 나타나게 한다.** World 실행기(`launcher.start`, 화면의 프로필 실행)를 쓴다. 이렇게 띄우면 터미널에 프로필이 배정되고 카드 색이 붙는다. `herdr agent start`로 직접 띄우면 프로필이 배정되지 않아 World에 기본 모습으로 보인다. 그 방식은 쓰지 않는다
+- Muse는 **OpenCode로만** 호출한다. Codex에 Muse 모델 이름을 넘기는 방식은 쓰지 않는다
+- World 실행기는 Codex에는 모델과 `-a`(승인)만 넘기고, OpenCode·agy에는 아무 인자도 넘기지 않는다. 그래서 모델과 권한은 CLI 기본 설정이 정한다(2026-10-31 설정): Codex `sandbox_mode = "danger-full-access"`(+ 프로필 승인 never), OpenCode 기본 모델 Muse + `permission` 모두 허용, agy 기본 `model = gemini-4-argon-high`·`mode = auto`. Claude는 프로필의 permission 값을 따른다
+- 프로필이 없거나, 권한이 막히거나, 한도에 걸린 경우는 서로 다른 사건으로 기록한다. 다른 모델로 조용히 바꾸지 않는다
+
+### 작업 규칙
+- **계획 게이트:** 계획을 확정하고 Astra의 기술 검토(반박·보완)를 받은 뒤에 구현·배포를 시작한다
+- 구현은 Muse에게 먼저 배정하고, 서로 독립된 일은 Sol이 병렬로 맡는다. 같은 파일을 동시에 고치지 않는다(별도 worktree, 소유자 기록)
+- 검수는 Astra가 고정 커밋 + 별도 검수 worktree에서 한다. 모델의 종료 메시지나 빈 출력만으로 완료 처리하지 않는다
+- 조사(Gemini, 한도 시 Terra) 결론은 오케스트레이터가 코드·이미지·시험으로 다시 확인한 뒤에 받아들인다
+- 모델 문자열이 바뀌면 이 표와 `docs/agent-dispatch-runbook.md`, 그리고 해당 CLI 기본 설정을 함께 고친다. World 프로필 변경이 필요하면 사용자에게 요청한다
+
+### 팀 정본(`~/projects/safetyreport/.team/`) 갱신 규칙
+- **누가:** 총괄(Orchestrator), 총괄이 없을 때는 대리 총괄(deputy)
+- **언제 (그때마다 즉시):** 발주, 회수, 검수 판정, 출고, 사용자 결정이 생기면 `ledger.md`와 `decisions.md`를 바로 고친다
+- **인계·세션 종료·재시작 전:** `HANDOFF.md` 맨 위의 현황을 지금 상태로 바꿔 쓴다
+- 구현·검수·조사 담당자는 `.team`을 직접 고치지 않는다. 보고서(자기 `status/<이름>.md`, 검수 결과 파일, 보고 메시지)로만 알린다
+- 이 갱신은 총괄이 규정을 지켜서 하는 것이고, 시스템이 자동으로 해 주지 않는다. 사용량이 갑자기 끊기면 마지막 갱신이 빠질 수 있으므로, 재시작하기 전에 사용자가 "팀 정본 갱신해"라고 말하면 그 자리에서 갱신한다
