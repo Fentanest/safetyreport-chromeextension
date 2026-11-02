@@ -60,6 +60,7 @@
   - 그 밖(Opus·Terra 등)이 구현 → 기본 **Reviewer(sol)**. 구현자와 같은 모델이면 Reviewer(sonnet)
 - **3회 규칙:** 같은 오류(같은 검수 지적·같은 실패 유형)를 3회 고쳐도 해결되지 않으면 **Reviewer(astra)**를 불러 원인·설계를 다시 본다. 회차는 총괄이 ledger에 센다
 - 조사(Gemini, 한도 시 Terra) 결론은 오케스트레이터가 코드·이미지·시험으로 다시 확인한 뒤에 받아들인다
+- **GitHub Actions artifact 보관 1일(2026-11-02 사용자 지시, 모든 safetyreport 레포):** 별도 브랜치·개별 빌드·수동 실행 워크플로를 포함해 `actions/upload-artifact`는 항상 `retention-days: 1`로 둔다. artifact 용량은 계정의 모든 레포가 함께 쓴다. 워크플로를 새로 만들거나 고칠 때도 같다
 - 모델 문자열이 바뀌면 이 표와 `docs/agent-dispatch-runbook.md`, 그리고 해당 CLI 기본 설정을 함께 고친다. World 프로필 변경이 필요하면 사용자에게 요청한다
 
 ### 팀 정본(`~/projects/safetyreport/.team/`) 갱신 규칙
