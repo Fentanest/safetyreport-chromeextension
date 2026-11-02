@@ -6,14 +6,16 @@
 
 ## 에이전트 배정 (safetyreport 계열 정본의 사본)
 
-> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정).
+> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정). 검수자 배정·계획·3회 규칙은 2026-11-02 사용자 결정(D39)이다.
 
 | 역할 | Herdr World 프로필 (기존 것을 그대로 쓴다) | 실행 | 모델 |
 |---|---|---|---|
 | 총괄·지휘·최종 판정 | Orchestrator | Claude Code | Opus |
 | **구현 1순위 (Muse)** | Builder(opencode) | **OpenCode** | `opencode-go/muse-spark-1.3-contributor` (OpenCode 기본 모델) |
 | 구현 병렬, 계약·데이터·보안·CI·통합 (Sol) | Builder(sol) | Codex | `gpt-6.1-sol` |
-| **검수 (Astra)**: 계획 기술검토·반박, 고정 커밋 정식 검수 | Reviewer(astra) | Codex | `gpt-6-astra` |
+| **계획 (Astra)**: `!계획!`·`!계획만!` 요청 때의 계획 기술검토·반박, 그리고 **같은 오류를 3회 고쳐도 안 될 때의 해결** | Reviewer(astra) | Codex | `gpt-6-astra` |
+| **검수 (기본 Sol)**: 고정 커밋 정식 검수. Muse 구현과 Sonnet 구현을 검수한다 | Reviewer(sol) | Codex | `gpt-6.1-sol` |
+| **검수 (Sonnet)**: Sol이 구현한 것을 검수한다(대척점 모델) | Reviewer(sonnet) | Claude Code | Sonnet |
 | **웹 검색·조사·리서치 (Gemini)** | Web Researcher | agy | `gemini-4-argon-high` (agy 기본 모델) |
 | 조사 대체 (Terra, **Gemini가 한도에 걸렸을 때만**) | Code Analyst | Codex | `gpt-6.1-terra` |
 
@@ -25,9 +27,14 @@
 - 프로필이 없거나, 권한이 막히거나, 한도에 걸린 경우는 서로 다른 사건으로 기록한다. 다른 모델로 조용히 바꾸지 않는다
 
 ### 작업 규칙
-- **계획 게이트:** 계획을 확정하고 Astra의 기술 검토(반박·보완)를 받은 뒤에 구현·배포를 시작한다
+- **계획 게이트:** 계획을 확정하고 기술 검토(반박·보완)를 받은 뒤에 구현·배포를 시작한다. 사용자가 `!계획!` 또는 `!계획만!`이라고 하면 그 계획 작업의 Codex 세션은 **Reviewer(astra)**를 쓴다
 - 구현은 Muse에게 먼저 배정하고, 서로 독립된 일은 Sol이 병렬로 맡는다. 같은 파일을 동시에 고치지 않는다(별도 worktree, 소유자 기록)
-- 검수는 Astra가 고정 커밋 + 별도 검수 worktree에서 한다. 모델의 종료 메시지나 빈 출력만으로 완료 처리하지 않는다
+- **검수자 배정(구현자와 대척점 모델):** 검수는 고정 커밋 + 별도 검수 worktree에서 한다. 모델의 종료 메시지나 빈 출력만으로 완료 처리하지 않는다
+  - Muse(OpenCode)가 구현 → **Reviewer(sol)**
+  - Sol이 구현 → **Reviewer(sonnet)**
+  - Sonnet이 구현 → **Reviewer(sol)**
+  - 그 밖(Opus·Terra 등)이 구현 → 기본 **Reviewer(sol)**. 구현자와 같은 모델이면 Reviewer(sonnet)
+- **3회 규칙:** 같은 오류(같은 검수 지적·같은 실패 유형)를 3회 고쳐도 해결되지 않으면 **Reviewer(astra)**를 불러 원인·설계를 다시 본다. 회차는 총괄이 ledger에 센다
 - 조사(Gemini, 한도 시 Terra) 결론은 오케스트레이터가 코드·이미지·시험으로 다시 확인한 뒤에 받아들인다
 - 모델 문자열이 바뀌면 이 표와 `docs/agent-dispatch-runbook.md`, 그리고 해당 CLI 기본 설정을 함께 고친다. World 프로필 변경이 필요하면 사용자에게 요청한다
 
