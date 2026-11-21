@@ -30,16 +30,15 @@
 
 ## 에이전트 배정 (safetyreport 계열 정본의 사본)
 
-> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정). 검수자 배정·계획·3회 규칙은 2026-11-02 사용자 결정(D39)이다. 작업자를 띄우는 곳은 2026-11-10 사용자 결정(D138)으로 Herdr World에서 **Paseo**로 바꿨다.
+> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정). 검수자 배정·계획·3회 규칙은 2026-11-02 사용자 결정(D39)이다. 작업자를 띄우는 곳은 2026-11-10 사용자 결정(D138)으로 Herdr World에서 **Paseo**로 바꿨다. 2026-11-20~21에 Hermes를 총괄로 두었다가 2026-11-21 사용자 지시로 Claude 총괄로 되돌렸다. 대리 총괄(Astra) 규정은 2026-11-21 사용자 결정(D338)으로 없앴고, Sol·Astra는 2026-11-20 사용자 결정(D335)으로 6.2를 쓴다.
 
 | 역할 | 에이전트 | `create_agent`의 `provider` | `modeId` | `thinkingOptionId` |
 |---|---|---|---|---|
 | 총괄·지휘·최종 판정 | Claude | 사용자가 Paseo 앱에서 직접 띄운다 | | |
-| 대리 총괄: Claude 사용량이 다해 총괄이 없을 때 | Astra | `codex/gpt-6-astra` | `full-access` | `high` |
 | **구현 1순위** | Muse | `opencode/opencode-go/muse-spark-1.3-contributor` | `build` | (기본) |
-| 구현 병렬, 계약·데이터·보안·CI·통합 | Sol | `codex/gpt-6.1-sol` | `full-access` | `high` |
-| **계획**: `!계획!`·`!계획만!` 요청 때의 계획 기술검토·반박, 그리고 **같은 오류를 3회 고쳐도 안 될 때의 해결** | Astra | `codex/gpt-6-astra` | `full-access` | `high` |
-| **검수 (기본)**: 고정 커밋 정식 검수. Muse 구현과 Sonnet 구현을 검수한다 | Sol | `codex/gpt-6.1-sol` | `full-access` | `high` |
+| 구현 병렬, 계약·데이터·보안·CI·통합 | Sol | `codex/gpt-6.2-sol` | `full-access` | `high` |
+| **계획**: `!계획!`·`!계획만!` 요청 때의 계획 기술검토·반박, 그리고 **같은 오류를 3회 고쳐도 안 될 때의 해결** | Astra | `codex/gpt-6.2-astra` | `full-access` | `high` |
+| **검수 (기본)**: 고정 커밋 정식 검수. Muse 구현과 Sonnet 구현을 검수한다 | Sol | `codex/gpt-6.2-sol` | `full-access` | `high` |
 | **검수**: Sol이 구현한 것을 검수한다(대척점 모델) | Sonnet | `claude/claude-sonnet-5-5` | `bypassPermissions` | (기본) |
 | **웹 검색·조사·리서치** | Gemini | `antigravity/gemini-4-argon-high` | `full-access` | (없음) |
 | 조사: Gemini argon이 한도에 걸렸을 때 | Gemini | `antigravity/gemini-3.8-flash-high` | `full-access` | (없음) |
@@ -75,7 +74,7 @@
 - 모델 문자열이 바뀌면 이 표와 사본, 모바일 레포·map 레포의 `docs/agent-dispatch-runbook.md`를 함께 고친다. Paseo 모델 목록에 없는 모델을 써야 하면 사용자에게 요청한다(`~/.paseo/config.json`은 전역 설정이라 작업자가 고치지 않는다)
 
 ### 팀 정본(`~/projects/safetyreport/.team/`) 갱신 규칙
-- **누가:** 총괄(Claude), 총괄이 없을 때는 대리 총괄(Astra)
+- **누가:** 총괄(Claude)
 - **언제 (그때마다 즉시):** 발주, 회수, 검수 판정, 출고, 사용자 결정이 생기면 `ledger.md`와 `decisions.md`를 바로 고친다. 발주 기록에는 Paseo `agentId`를 적는다
 - **인계·세션 종료·재시작 전:** `HANDOFF.md` 맨 위의 현황을 지금 상태로 바꿔 쓴다
 - 구현·검수·조사 담당자는 `.team`을 직접 고치지 않는다. 보고서(자기 `status/<이름>.md`, 검수 결과 파일, 보고 메시지)로만 알린다
