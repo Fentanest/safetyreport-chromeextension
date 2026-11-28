@@ -30,11 +30,12 @@
 
 ## 에이전트 배정 (safetyreport 계열 정본의 사본)
 
-> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정). 작업자를 띄우는 곳은 **Paseo**다(2026-11-10 D138). 총괄은 Claude다(2026-11-21 D343). Sol·Astra는 6.2를 쓴다(D335). **2026-11-28 사용자 결정(D437)으로 부총괄 Neon을 두었다.** 구현·수리는 총괄 → Neon → 구현자 순서로 맡기고, 검수는 지시한 Neon이 하며, 통합 직전에 총괄이 직접 감사한다(D446). 이 결정으로 D39의 대척점 모델 정식 검수(Sol·Sonnet)는 없어졌고 Sonnet은 표에서 뺐다. 조사 모델은 곧 없어지는 argon 대신 Hydrogen을 쓴다(D438). 어려운 작업은 Neon이 직접 고치고 별도 Opus가 검수하며(D440), 3회 규칙은 5회 규칙으로 바꿨다(D441). 시험 기기는 기기 전용 Neon이 맡는다(D442).
+> 정본은 `~/projects/safetyreport/AGENTS.md`의 이 절이다. 각 레포 AGENTS.md의 같은 절은 사본이다. 고칠 때는 정본을 먼저 고친 뒤 사본을 모두 같은 글로 맞춘다(2026-10-31 사용자 결정). 작업자를 띄우는 곳은 **Paseo**다(2026-11-10 D138). 총괄은 Claude다(2026-11-21 D343). Sol·Astra는 6.2를 쓴다(D335). **2026-11-28 사용자 결정(D437)으로 부총괄 Neon을 두었고, Claude 총괄이 없을 때의 대리(임시) 총괄도 Neon이다(D454, D338의 「대리 총괄 없음」을 대체).** 구현·수리는 총괄 → Neon → 구현자 순서로 맡기고, 검수는 지시한 Neon이 하며, 통합 직전에 총괄이 직접 감사한다(D446). 이 결정으로 D39의 대척점 모델 정식 검수(Sol·Sonnet)는 없어졌고 Sonnet은 표에서 뺐다. 조사 모델은 곧 없어지는 argon 대신 Hydrogen을 쓴다(D438). 어려운 작업은 Neon이 직접 고치고 별도 Opus가 검수하며(D440), 3회 규칙은 5회 규칙으로 바꿨다(D441). 시험 기기는 기기 전용 Neon이 맡는다(D442).
 
 | 역할 | 에이전트 | `create_agent`의 `provider` | `modeId` | `thinkingOptionId` |
 |---|---|---|---|---|
 | 총괄·지휘·통합·최종 판정 | Claude | 사용자가 Paseo 앱에서 직접 띄운다 | | |
+| **대리(임시) 총괄**: Claude 총괄이 없을 때(사용량 소진 등) 총괄 몫을 맡는다 | Neon(대리 총괄 세션) | `antigravity/gemini-4-neon-high` | `full-access` | (없음) |
 | **부총괄**: 총괄에게 받은 일의 원인 찾기·코드 파악, 구현자 지시, 검수, 총괄 보고. 제품 코드는 어려운 작업일 때만 직접 고친다 | Neon | `antigravity/gemini-4-neon-high` | `full-access` | (없음) |
 | **시험 기기 전용**: 받은 점검 항목대로 시험 기기를 조작해 시험하고 결과를 보고한다 | Neon(기기 전용 세션) | `antigravity/gemini-4-neon-high` | `full-access` | (없음) |
 | **구현 1순위** | Muse | `opencode/opencode-go/muse-spark-1.3-contributor` | `build` | (기본) |
@@ -54,6 +55,7 @@
 - Muse는 **OpenCode로만** 호출한다. Codex에 Muse 모델 이름을 넘기는 방식은 쓰지 않는다
 - **조사 순서(2026-11-28 D438):** `gemini-4-hydrogen-high`를 먼저 부른다. 한도 초과가 로그·화면으로 확인되면 `gemini-3.8-flash-high`로 같은 일을 다시 맡긴다. 그것도 한도 초과면 Terra에게 맡긴다. 한도 초과가 아닌 오류(인증·권한·도구)는 원인을 고쳐 같은 모델로 다시 부른다
 - **Neon이 한도에 걸리면(D437):** 다른 모델로 Neon을 대신 띄우지 않는다. 총괄이 그 묶음의 Neon 몫(지시·검수·보고 정리)을 직접 이어받는다. 이미 일하는 구현자는 그대로 두고, 총괄이 그 구현자에게 직접 지시한다. 기기 전용 Neon이 한도에 걸리면 Opus 전용 세션(`opus-device`)이 같은 일을 맡는다(D442)
+- **대리(임시) 총괄(D454):** Claude 총괄이 없을 때(사용량 소진 등)는 Neon이 대리 총괄을 맡는다. 사용자가 띄우거나, 총괄이 사용량이 다하기 전에 `HANDOFF.md`를 고쳐 쓰고 띄운다. 대리 총괄 Neon은 묶음 Neon과 다른 세션으로 띄워, 자기가 검수한 묶음을 자기가 감사하지 않게 한다. 대리 총괄은 이 절의 총괄 몫(묶기·발주·감독·통합 직전 감사·통합·`ledger.md`·`HANDOFF.md` 갱신)을 하고, 사용자 결정은 지금처럼 결정 담당 세션을 거친다. Claude 총괄이 돌아오면 `HANDOFF.md` 맨 위 현황으로 인계하고 물러난다
 - **정리:** 각자 **자기가 띄운 에이전트만** `archive_agent`로 정리한다. Neon은 묶음을 보고하기 전에 자기가 띄운 작업자와 그 worktree를 정리한다. 총괄은 통합한 뒤 Neon과 묶음 worktree를 정리한다. **작업 공간도 정리해 사이드바에서 뺀다(D451):** 에이전트를 archive한 뒤 그 일에 쓴 작업 공간을 `archive_workspace`로 정리한다. 작업 공간 정리는 폴더를 지우지 않으므로(2026-11-28 실측: `removedDirectory:false`, 미추적 파일 보존) worktree 폴더는 합쳐졌고 남길 파일이 없음을 확인한 뒤 `git worktree remove`로 따로 지운다. 작업 공간을 정리하면 그 안의 에이전트도 함께 정리되므로, 아직 쓰는 에이전트가 있는 작업 공간은 정리하지 않는다. 특히 총괄·결정 담당처럼 홈 폴더를 함께 쓰는 작업 공간은 정리하지 않는다. 자기가 만든 작업 공간만 정리한다. Neon은 자기가 띄운 작업자의 작업 공간을, 총괄은 통합한 뒤 묶음 작업 공간을 정리한다. 같은 일의 후속 지시는 같은 에이전트에 `send_agent_prompt`로 보낸다. 다른 에이전트·작업 공간·Paseo daemon은 건드리지 않는다
 - 모델이 없거나, 권한이 막히거나, 한도에 걸린 경우는 서로 다른 사건으로 기록한다. 위 조사 순서와 Neon 한도 규칙 말고는 다른 모델로 조용히 바꾸지 않는다
 - 자세한 절차(발주, Neon 묶음 절차, 질문·권한 요청에 답하기, 끊긴 작업자 이어가기, 완료 감시)는 모바일 레포 `~/projects/safetyreport/safetyreport/docs/agent-dispatch-runbook.md` §0을 따른다
@@ -81,7 +83,7 @@
 - 모델 문자열이 바뀌면 이 표와 사본, 모바일 레포·map 레포의 `docs/agent-dispatch-runbook.md`를 함께 고친다. Paseo 모델 목록에 없는 모델을 써야 하면 사용자에게 요청한다(`~/.paseo/config.json`은 전역 설정이라 작업자가 고치지 않는다)
 
 ### 팀 정본(`~/projects/safetyreport/.team/`) 갱신 규칙
-- **누가:** `ledger.md`·`HANDOFF.md`는 총괄(Claude). `decisions.md`(사용자 결정 기록)와 결정 요약(`reports/decisions-digest-*.md`)은 **결정 담당 세션**(Hermes, Sol 6.2 — Paseo 제목 `hermes-sol-decisions`)이 고친다(2026-11-21 사용자 결정 D345·D349)
+- **누가:** `ledger.md`·`HANDOFF.md`는 총괄(Claude). 총괄이 없을 때는 대리 총괄 Neon(D454). `decisions.md`(사용자 결정 기록)와 결정 요약(`reports/decisions-digest-*.md`)은 **결정 담당 세션**(Hermes, Sol 6.2 — Paseo 제목 `hermes-sol-decisions`)이 고친다(2026-11-21 사용자 결정 D345·D349)
 - **언제 (그때마다 즉시):** 총괄은 Neon 발주, Neon 보고 회수, 통합, 출고가 생기면 `ledger.md`를 바로 고친다. 발주 기록에는 Paseo `agentId`를 적고, Neon 아래 작업자의 `agentId`와 실패 회차는 Neon 보고서에서 옮겨 적는다
 - **사용자 결정:** 총괄은 사용자 결정이 필요한 질문을 결정 담당에게 보내고, 결정 담당이 사용자에게 묻는다. 사용자의 답(결정 담당 세션에 직접 말한 결정 포함)은 결정 담당이 `decisions.md`에 원문과 번호로 적고 총괄에게 `[결정 D번호]`로 알린다. 총괄은 지난 결정을 기억으로 쓰지 않고 결정 담당에게 조회한다(컨텍스트 압축 뒤에도 같다). Neon도 지난 결정을 기억으로 쓰지 않고 결정 담당에게 직접 조회한다. 사용자에게 새로 물을 일은 총괄에게 올린다(D444)
 - **인계·세션 종료·재시작 전:** `HANDOFF.md` 맨 위의 현황을 지금 상태로 바꿔 쓴다
